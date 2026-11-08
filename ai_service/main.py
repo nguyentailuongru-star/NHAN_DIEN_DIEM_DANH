@@ -16,6 +16,11 @@ from config import (
     API_RECOGNITION_URL,
     API_ATTENTION_URL,
     API_CAMERA_SYNC_URL,
+    API_CAMERA_LIVE_URL,
+    LIVE_FPS_INTERVAL_VIEWING,
+    LIVE_FPS_INTERVAL_IDLE,
+    LIVE_MAX_SIDE,
+    LIVE_JPEG_QUALITY,
     CAMERA_CONNECT_ATTEMPTS,
     CAMERA_RETRY_DELAY_SEC,
     BEHAVIOR_MODEL_FILENAME,
@@ -88,6 +93,11 @@ class AIService:
         self._cam_lock = threading.Lock()
         self.camera_workers = {}
         self.camera_status = {}
+        # Ảnh xem trực tiếp gửi sang Flask: {code: jpeg bytes}; live_viewers = camera đang có người xem
+        self._live_lock = threading.Lock()
+        self._live_pending = {}
+        self._live_event = threading.Event()
+        self.live_viewers = set()
         # Theo dõi track theo camera: {(camera_id, track_id): state}
         self.track_states = {}
         self.running = False
@@ -762,9 +772,41 @@ class AIService:
             return False
         self._sync_warned = False
         self._apply_camera_list(data.get("cameras") or [])
+        self.live_viewers = {str(c) for c in (data.get("live") or [])}
         for code in data.get("restart") or []:
             self._restart_camera(str(code))
         return True
+
+    # ------------------------------------------------ ảnh xem trực tiếp → Flask
+    def _queue_live_frame(self, code, frame):
+        """Thu nhỏ + nén JPEG rồi để luồng gửi đẩy sang Flask (không chặn luồng camera)."""
+        try:
+            h, w = frame.shape[:2]
+            scale = float(LIVE_MAX_SIDE) / float(max(h, w))
+            img = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA) if scale < 1 else frame
+            ok, jpg = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), int(LIVE_JPEG_QUALITY)])
+            if ok:
+                with self._live_lock:
+                    self._live_pending[code] = jpg.tobytes()
+                self._live_event.set()
+        except Exception as e:
+            logger.debug("Không tạo được ảnh live camera %s: %s", code, e)
+
+    def _live_publisher_loop(self):
+        session = requests.Session()
+        while self.running:
+            self._live_event.wait(1.0)
+            self._live_event.clear()
+            with self._live_lock:
+                pending, self._live_pending = self._live_pending, {}
+            for code, data in pending.items():
+                try:
+                    session.post(
+                        f"{API_CAMERA_LIVE_URL}/{code}", data=data,
+                        headers={"Content-Type": "image/jpeg"}, timeout=2,
+                    )
+                except requests.RequestException:
+                    pass  # Flask tạm thời không chạy → bỏ qua frame này
 
     def stream_camera(self, worker):
         """Đọc stream từ 1 camera RTSP và xử lý (chạy trong thread riêng)."""
@@ -834,27 +876,62 @@ class AIService:
             self._set_cam_status(code, "online", "")
             logger.info("[camera %s] Đã kết nối: %s", code, cfg.get("name"))
 
+            # Luồng nhận diện riêng: lấy frame MỚI NHẤT để xử lý, không chặn luồng đọc camera
+            # (đọc camera chạy liên tục → không dồn buffer, xem trực tiếp mượt).
+            latest = {"frame": None, "seq": 0}
+            latest_lock = threading.Lock()
+            conn_done = threading.Event()
+
+            def process_loop():
+                last_seq = 0
+                while not conn_done.is_set():
+                    with latest_lock:
+                        frame_p, seq = latest["frame"], latest["seq"]
+                    if frame_p is None or seq == last_seq:
+                        time.sleep(0.02)
+                        continue
+                    last_seq = seq
+                    started = time.monotonic()
+                    try:
+                        self.process_frame(frame_p, code)
+                    except Exception as e:
+                        logger.error("Lỗi xử lý frame camera %s: %s", code, e)
+                    rest = float(FRAME_INTERVAL) - (time.monotonic() - started)
+                    if rest > 0:
+                        conn_done.wait(rest)
+
+            proc_thread = threading.Thread(target=process_loop, daemon=True, name=f"proc-{code}")
+            proc_thread.start()
+
             lost = False
-            next_process_time = time.monotonic()
+            next_retrieve = 0.0
+            next_live_time = 0.0
             while self.running and not stop.is_set() and not restart.is_set():
                 # Grab liên tục để luôn lấy frame mới nhất, tránh dồn buffer
                 if not cap.grab():
                     lost = True
                     break
                 now = time.monotonic()
-                if now < next_process_time:
-                    time.sleep(0.01)
+                if now < next_retrieve:
                     continue
                 ret, frame = cap.retrieve()
                 if not ret or frame is None:
                     lost = True
                     break
-                try:
-                    self.process_frame(frame, code)
-                except Exception as e:
-                    logger.error("Lỗi xử lý frame camera %s: %s", code, e)
-                next_process_time = now + float(FRAME_INTERVAL)
 
+                viewing = code in self.live_viewers
+                next_retrieve = now + min(float(FRAME_INTERVAL), LIVE_FPS_INTERVAL_VIEWING if viewing else LIVE_FPS_INTERVAL_IDLE)
+                with latest_lock:
+                    latest["frame"] = frame
+                    latest["seq"] += 1
+
+                # Ảnh xem trực tiếp cho dashboard (dùng chung kết nối này, không mở thêm RTSP)
+                if now >= next_live_time:
+                    self._queue_live_frame(code, frame)
+                    next_live_time = now + (LIVE_FPS_INTERVAL_VIEWING if viewing else LIVE_FPS_INTERVAL_IDLE)
+
+            conn_done.set()
+            proc_thread.join(timeout=10)
             cap.release()
             if lost:
                 logger.warning("[camera %s] Mất kết nối", code)
@@ -996,6 +1073,7 @@ class AIService:
                 self._sync_with_server()
 
         threading.Thread(target=sync_loop, daemon=True, name="camera-sync").start()
+        threading.Thread(target=self._live_publisher_loop, daemon=True, name="live-publisher").start()
 
         # Giữ main thread chạy
         try:

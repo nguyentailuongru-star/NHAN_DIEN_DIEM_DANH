@@ -124,6 +124,27 @@ def camera_stream():
     else:
         camera_source = (request.args.get("source") or Config.DEFAULT_CAMERA_SOURCE).strip() or Config.DEFAULT_CAMERA_SOURCE
 
+    mjpeg_headers = {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+    }
+
+    # AI service đang chạy → dùng ảnh từ kết nối camera chạy ngầm của AI (không mở thêm RTSP)
+    if cam is not None and cam.enabled:
+        from routes.cameras import ai_camera_info
+
+        ai_alive, ai_cam = ai_camera_info(cam.code)
+        if ai_alive:
+            if ai_cam.get("state") == "error":
+                preview_update(cam.id, "error", ai_cam.get("message") or "Camera đang lỗi")
+                return Response("Camera đang lỗi", status=503, mimetype="text/plain")
+            return Response(
+                stream_with_context(_live_relay_generator(cam.id, cam.code)),
+                mimetype="multipart/x-mixed-replace; boundary=frame",
+                headers=mjpeg_headers,
+            )
+
+    # AI service không chạy → Flask tự kết nối thẳng tới camera
     preview_idx = cam.id if cam is not None else None
     if preview_idx is not None:
         preview_update(preview_idx, "connecting", "Đang kết nối...")
@@ -139,11 +160,44 @@ def camera_stream():
     return Response(
         stream_with_context(_camera_stream_generator(cap, cv2, preview_idx)),
         mimetype="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-        },
+        headers=mjpeg_headers,
     )
+
+
+LIVE_WAIT_SEC = 25  # chờ ảnh đầu tiên (AI có thể đang thử kết nối 3 lần) / tối đa không có ảnh mới
+
+
+def _live_relay_generator(cam_id, code):
+    """Phát lại ảnh mà AI service gửi sang (camera chạy ngầm liên tục ở AI)."""
+    from routes.cameras import ai_camera_info, live_frame, mark_viewer, preview_update
+
+    last_ts = 0.0
+    last_new = time.time()
+    preview_update(cam_id, "connecting", "Đang lấy hình từ AI service...")
+    try:
+        while True:
+            mark_viewer(code)
+            item = live_frame(code)
+            if item and item[0] > last_ts:
+                last_ts, jpg = item
+                last_new = time.time()
+                preview_update(cam_id, "online")
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
+            else:
+                ai_alive, ai_cam = ai_camera_info(code)
+                if ai_cam.get("state") == "error":
+                    preview_update(cam_id, "error", ai_cam.get("message") or "Camera đang lỗi")
+                    break
+                if not ai_alive:
+                    preview_update(cam_id, "error", "AI service đã dừng")
+                    break
+                if time.time() - last_new > LIVE_WAIT_SEC:
+                    preview_update(cam_id, "error", "Không nhận được hình từ camera")
+                    break
+            time.sleep(0.05)
+    except GeneratorExit:
+        preview_update(cam_id, "idle")
+        raise
 
 
 @dashboard_bp.route("/video-recognition")

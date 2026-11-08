@@ -15,11 +15,19 @@ CAMERAS = [
 ]
 
 # Flask API endpoint
-API_BASE_URL = "http://localhost:5000"
+API_BASE_URL = __import__("os").environ.get("API_BASE_URL", "http://localhost:5000")
 API_RECOGNITION_URL = f"{API_BASE_URL}/api/recognition"
 API_GET_USERS_URL = f"{API_BASE_URL}/api/users/embeddings"
 API_ATTENTION_URL = f"{API_BASE_URL}/api/attention"
 API_CAMERA_SYNC_URL = f"{API_BASE_URL}/api/cameras/ai-sync"
+API_CAMERA_LIVE_URL = f"{API_BASE_URL}/api/cameras/live"
+
+# Xem trực tiếp trên dashboard dùng chung kết nối camera của AI (chỉ 1 kết nối RTSP / camera,
+# camera chạy ngầm liên tục, mở dashboard là thấy hình ngay không phải kết nối lại).
+LIVE_FPS_INTERVAL_VIEWING = 0.2   # giây/ảnh khi có người đang xem (~5 hình/giây)
+LIVE_FPS_INTERVAL_IDLE = 1.0      # giây/ảnh khi không ai xem (để mở trang là có hình ngay)
+LIVE_MAX_SIDE = 960               # cạnh dài tối đa của ảnh xem trực tiếp
+LIVE_JPEG_QUALITY = 70
 
 # Kết nối camera: thử tối đa N lần (cách nhau vài giây) rồi DỪNG HẲN và báo đỏ trên dashboard.
 # Admin bấm "Khởi động lại camera" trên dashboard để kết nối lại. Đặt 1 = không thử lại.

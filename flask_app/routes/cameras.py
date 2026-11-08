@@ -31,6 +31,10 @@ _lock = threading.Lock()
 _ai_state = {"last_sync": 0.0, "cameras": {}}   # cameras: {code: {...}}
 _pending_restart_codes = set()
 _preview = {}                                   # {camera_id: {"state", "message", "last_frame", "since"}}
+_live = {}                                      # {code: (ts, jpeg bytes)} ảnh mới nhất AI gửi sang
+_viewers = {}                                   # {code: ts} lần cuối có người xem camera này
+_restart_at = {}                                # {code: ts} lần cuối admin bấm khởi động lại
+VIEWER_TIMEOUT_SEC = 5
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -103,15 +107,51 @@ def ai_sync():
         return jsonify({"error": "forbidden"}), 403
     data = request.get_json(silent=True) or {}
     cams = list_cameras(enabled_only=True)
+    now = time.time()
     with _lock:
-        _ai_state["last_sync"] = time.time()
+        _ai_state["last_sync"] = now
         _ai_state["cameras"] = {str(c.get("code")): c for c in (data.get("cameras") or []) if c.get("code")}
         restart = sorted(_pending_restart_codes)
         _pending_restart_codes.clear()
+        live = [code for code, ts in _viewers.items() if now - ts <= VIEWER_TIMEOUT_SEC]
     return jsonify({
         "cameras": [{"code": c.code, "name": c.name, "rtsp_url": c.rtsp_url} for c in cams],
         "restart": restart,
+        "live": live,   # camera đang có người xem → AI gửi ảnh nhanh hơn
     })
+
+
+@cameras_bp.route("/live/<code>", methods=["POST"])
+def live_push(code):
+    """AI service gửi ảnh mới nhất của camera (JPEG) để dashboard xem trực tiếp (chỉ máy local)."""
+    if not is_local_request():
+        return jsonify({"error": "forbidden"}), 403
+    data = request.get_data(cache=False)
+    if data:
+        with _lock:
+            _live[str(code)] = (time.time(), data)
+    return ("", 204)
+
+
+def live_frame(code):
+    with _lock:
+        return _live.get(str(code))
+
+
+def mark_viewer(code):
+    with _lock:
+        _viewers[str(code)] = time.time()
+
+
+def ai_camera_info(code):
+    """(AI service có chạy không, trạng thái camera theo AI). Vừa bấm khởi động lại → coi là đang kết nối."""
+    now = time.time()
+    with _lock:
+        alive = (now - _ai_state["last_sync"]) <= AI_SYNC_TIMEOUT_SEC
+        info = dict(_ai_state["cameras"].get(str(code)) or {})
+        if code in _pending_restart_codes or now - _restart_at.get(str(code), 0) < 6:
+            info = {"state": "connecting", "message": "Đang khởi động lại..."}
+    return alive, info
 
 
 def _ai_status_for(cam, ai_alive, ai_cams, pending):
@@ -141,7 +181,8 @@ def cameras_status():
     with _lock:
         ai_alive = (time.time() - _ai_state["last_sync"]) <= AI_SYNC_TIMEOUT_SEC
         ai_cams = dict(_ai_state["cameras"])
-        pending = set(_pending_restart_codes)
+        now = time.time()
+        pending = set(_pending_restart_codes) | {k for k, ts in _restart_at.items() if now - ts < 6}
         items = [{
             "id": c.id,
             "code": c.code,
@@ -161,6 +202,8 @@ def camera_restart(cam_id):
         ai_alive = (time.time() - _ai_state["last_sync"]) <= AI_SYNC_TIMEOUT_SEC
         if ai_alive and cam.enabled:
             _pending_restart_codes.add(cam.code)
+            _restart_at[cam.code] = time.time()
+            _live.pop(cam.code, None)
     return jsonify({"status": "ok", "ai_restart_sent": bool(ai_alive and cam.enabled)})
 
 
