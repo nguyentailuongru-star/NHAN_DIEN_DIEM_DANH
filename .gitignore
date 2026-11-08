@@ -7,7 +7,6 @@ venv/
 # Ảnh / video (dung lượng lớn, sinh ra khi chạy)
 captures/
 ai_service/captures/
-goc_anh/
 video/
 flask_app/video/
 flask_app/uploads/
