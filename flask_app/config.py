@@ -6,8 +6,8 @@ import os
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "nhan-dien-diem-danh-secret-key-2024")
     CAMERA_SOURCES = [
-        "rtsp://admin:admin1630688@192.168.1.53:554/onvif1",
-        "rtsp://admin:L2295266@192.168.1.135:54/cam/realmonitor?channel=1&subtype=0",
+        "rtsp://admin:admin1630688@192.168.1.4:554/onvif1",
+        "rtsp://admin:L2295266@192.168.1.54:554/cam/realmonitor?channel=1&subtype=0",
     ]
     DEFAULT_CAMERA_SOURCE = os.environ.get("DEFAULT_CAMERA_SOURCE", CAMERA_SOURCES[0])
 
@@ -32,6 +32,11 @@ class Config:
         else {"pool_pre_ping": True}
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Khoảng cách tối thiểu giữa 2 lần ghi điểm danh của CÙNG 1 người (giây).
+    # Áp dụng ở server nên đúng cho mọi camera, mọi tiến trình AI và cả khi AI khởi động lại.
+    # 180 = 3 phút, 300 = 5 phút.
+    ATTENDANCE_COOLDOWN_SECONDS = int(os.environ.get("ATTENDANCE_COOLDOWN_SECONDS", 300))
 
     # Upload
     UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")

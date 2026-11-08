@@ -657,6 +657,9 @@ def _video_status():
 # ──────────────────────────────────────────────
 # Recognition endpoint (AI Service gọi vào đây)
 # ──────────────────────────────────────────────
+_RECOGNITION_LOCK = threading.Lock()
+
+
 @api_bp.route("/recognition", methods=["POST"])
 def recognition():
     """Nhận kết quả nhận diện từ AI Service."""
@@ -676,16 +679,38 @@ def recognition():
     else:
         log_time = datetime.now()
 
-    log = AttendanceLog(
-        user_id=user_id,
-        user_name=user_name,
-        camera_id=camera_id,
-        time=log_time,
-        image=image,
-        similarity=similarity,
-    )
-    db.session.add(log)
-    db.session.commit()
+    cooldown = int(current_app.config.get("ATTENDANCE_COOLDOWN_SECONDS", 300))
+    with _RECOGNITION_LOCK:
+        # Bỏ qua nếu người này vừa được điểm danh trong khoảng cooldown (mọi camera / mọi tiến trình AI).
+        if user_id is not None and cooldown > 0:
+            last = (
+                AttendanceLog.query.filter(
+                    AttendanceLog.user_id == user_id,
+                    AttendanceLog.time > log_time - timedelta(seconds=cooldown),
+                    AttendanceLog.time <= log_time + timedelta(seconds=cooldown),
+                )
+                .order_by(AttendanceLog.time.desc())
+                .first()
+            )
+            if last is not None:
+                wait = cooldown - int(abs((log_time - last.time).total_seconds()))
+                return jsonify({
+                    "status": "skipped",
+                    "reason": "cooldown",
+                    "last_log_id": last.id,
+                    "retry_after": max(wait, 0),
+                })
+
+        log = AttendanceLog(
+            user_id=user_id,
+            user_name=user_name,
+            camera_id=camera_id,
+            time=log_time,
+            image=image,
+            similarity=similarity,
+        )
+        db.session.add(log)
+        db.session.commit()
 
     # Emit realtime event qua SocketIO
     try:

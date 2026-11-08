@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Hệ thống Điểm danh{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Bootstrap 5 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -11,123 +13,105 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
-<body>
-    <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="{{ '/' if current_role == 'admin' else '/me' if current_role == 'employee' else '/login' }}">
-                <i class="bi bi-camera-video"></i> Điểm Danh AI
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
+{% set ep = request.endpoint %}
+{% macro nav_item(endpoint, href, icon, label) -%}
+    <a class="side-link {% if ep == endpoint %}active{% endif %}" href="{{ href }}">
+        <i class="bi {{ icon }}"></i><span>{{ label }}</span>
+    </a>
+{%- endmacro %}
+<body class="{% if current_account %}has-sidebar{% else %}auth-page{% endif %}">
+{% if current_account %}
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="{{ '/' if current_role == 'admin' else '/me' }}">
+            <span class="brand-icon"><i class="bi bi-person-bounding-box"></i></span>
+            <span class="brand-text">Điểm Danh AI<small>Nhận diện khuôn mặt</small></span>
+        </a>
+
+        <nav class="side-nav">
+            {% if current_role == 'admin' %}
+                <div class="side-group">Tổng quan</div>
+                {{ nav_item('dashboard.index', '/', 'bi-grid-1x2', 'Dashboard camera') }}
+                {{ nav_item('dashboard.attention_dashboard_page', '/attention-dashboard', 'bi-bar-chart-line', 'Hành vi lớp học') }}
+
+                <div class="side-group">Điểm danh</div>
+                {{ nav_item('dashboard.logs_page', '/logs', 'bi-clock-history', 'Lịch sử điểm danh') }}
+                {{ nav_item('dashboard.teacher_notebook_page', '/teacher-notebook', 'bi-journal-check', 'Sổ tay giáo viên') }}
+
+                <div class="side-group">Nhận dạng</div>
+                {{ nav_item('dashboard.video_recognition', '/video-recognition', 'bi-film', 'Nhận dạng video') }}
+                {{ nav_item('dashboard.behavior_video_page', '/behavior-video', 'bi-bounding-box', 'Hành vi qua video') }}
+                {{ nav_item('dashboard.group_camera_page', '/group-camera', 'bi-camera', 'Gom ảnh camera') }}
+                {{ nav_item('dashboard.group_video_page', '/group-video', 'bi-collection-play', 'Gom ảnh video') }}
+
+                <div class="side-group">Quản lý</div>
+                {{ nav_item('dashboard.users_page', '/users', 'bi-people', 'Nhân viên') }}
+                {{ nav_item('dashboard.face_upload_requests_page', '/face-uploads', 'bi-images', 'Ảnh nhân viên gửi') }}
+            {% elif current_role == 'employee' %}
+                <div class="side-group">Cá nhân</div>
+                {{ nav_item('dashboard.my_attendance_page', '/me', 'bi-person-check', 'Điểm danh của tôi') }}
+            {% endif %}
+        </nav>
+
+        <div class="side-footer">
+            <span id="connection-status" class="conn-pill"><i class="bi bi-circle-fill"></i> Đang kết nối...</span>
+        </div>
+    </aside>
+    <div class="sidebar-backdrop" onclick="document.body.classList.remove('sidebar-open')"></div>
+
+    <!-- Main -->
+    <div class="main">
+        <header class="topbar">
+            <button class="btn btn-icon d-lg-none" type="button" onclick="document.body.classList.toggle('sidebar-open')" aria-label="Menu">
+                <i class="bi bi-list"></i>
             </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav">
-                    {% if current_role == 'admin' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}" href="/">
-                                <i class="bi bi-speedometer2"></i> Dashboard Camera
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.video_recognition' %}active{% endif %}" href="/video-recognition">
-                                <i class="bi bi-film"></i> Nhận dạng Video
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.behavior_video_page' %}active{% endif %}" href="/behavior-video">
-                                <i class="bi bi-bounding-box"></i> Hành vi qua video
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.group_camera_page' %}active{% endif %}" href="/group-camera">
-                                <i class="bi bi-camera"></i> Gom ảnh camera
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.group_video_page' %}active{% endif %}" href="/group-video">
-                                <i class="bi bi-collection-play"></i> Gom ảnh video
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.users_page' %}active{% endif %}" href="/users">
-                                <i class="bi bi-people"></i> Nhân viên
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.logs_page' %}active{% endif %}" href="/logs">
-                                <i class="bi bi-clock-history"></i> Danh sách điểm danh
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.teacher_notebook_page' %}active{% endif %}" href="/teacher-notebook">
-                                <i class="bi bi-journal-check"></i> Sổ tay giáo viên
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.attention_dashboard_page' %}active{% endif %}" href="/attention-dashboard">
-                                <i class="bi bi-bar-chart-line"></i> Dashboard Hành vi lớp
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.face_upload_requests_page' %}active{% endif %}" href="/face-uploads">
-                                <i class="bi bi-images"></i> Ảnh nhân viên gửi
-                            </a>
-                        </li>
-                    {% elif current_role == 'employee' %}
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'dashboard.my_attendance_page' %}active{% endif %}" href="/me">
-                                <i class="bi bi-person-check"></i> Điểm danh của tôi
-                            </a>
-                        </li>
-                    {% endif %}
-                </ul>
-                <ul class="navbar-nav ms-auto">
-                    {% if current_account %}
-                        <li class="nav-item">
-                            <span class="nav-link text-light">
-                                <i class="bi bi-person-badge"></i> {{ current_account.username }} ({{ current_account.role }})
-                            </span>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-light" href="/logout"><i class="bi bi-box-arrow-right"></i> Đăng xuất</a>
-                        </li>
-                        <li class="nav-item">
-                            <span class="nav-link text-light" id="connection-status">
-                                <i class="bi bi-circle-fill text-danger"></i> Offline
-                            </span>
-                        </li>
-                    {% else %}
-                        <li class="nav-item">
-                            <a class="nav-link text-light" href="/login"><i class="bi bi-box-arrow-in-right"></i> Đăng nhập</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link text-light" href="/register"><i class="bi bi-person-plus"></i> Đăng ký</a>
-                        </li>
-                    {% endif %}
-                </ul>
+            <h1 class="page-title">{% block page_title %}{{ self.title().split(' - ')[0] }}{% endblock %}</h1>
+            <div class="topbar-right">
+                <span class="topbar-date d-none d-md-inline"><i class="bi bi-calendar3"></i> <span id="topbar-date"></span></span>
+                <div class="dropdown">
+                    <button class="user-chip dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                        <span class="avatar">{{ (current_account.name or current_account.username or '?')[:1] | upper }}</span>
+                        <span class="user-meta d-none d-sm-flex">
+                            <strong>{{ current_account.name or current_account.username }}</strong>
+                            <small>{{ 'Quản trị viên' if current_account.role == 'admin' else 'Nhân viên' }}</small>
+                        </span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                        <li><span class="dropdown-item-text small text-muted">Tài khoản: {{ current_account.username }}</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="/logout"><i class="bi bi-box-arrow-right me-2"></i>Đăng xuất</a></li>
+                    </ul>
+                </div>
+            </div>
+        </header>
+
+        <main class="content">
+{% else %}
+    <!-- Trang chưa đăng nhập (login / register) -->
+    <div class="auth-wrap">
+        <div class="auth-brand">
+            <span class="brand-icon"><i class="bi bi-person-bounding-box"></i></span>
+            <div>
+                <div class="auth-title">Điểm Danh AI</div>
+                <div class="auth-sub">Hệ thống điểm danh bằng nhận diện khuôn mặt</div>
             </div>
         </div>
-    </nav>
-
-    <!-- Content -->
-    <div class="container-fluid mt-3">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                <div class="row">
-                    <div class="col-12">
-                        {% for category, message in messages %}
-                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                                {{ message }}
-                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                            </div>
-                        {% endfor %}
+{% endif %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
-                </div>
-            {% endif %}
-        {% endwith %}
-        {% block content %}{% endblock %}
+                {% endfor %}
+            {% endwith %}
+            {% block content %}{% endblock %}
+{% if current_account %}
+        </main>
     </div>
+{% else %}
+    </div>
+{% endif %}
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>

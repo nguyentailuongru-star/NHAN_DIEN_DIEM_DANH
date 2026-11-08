@@ -226,6 +226,19 @@ class AIService:
         try:
             resp = requests.post(API_RECOGNITION_URL, json=payload, timeout=5)
             resp.raise_for_status()
+            body = resp.json() if resp.content else {}
+            if body.get("status") == "skipped":
+                # Server đã có điểm danh gần đây của người này → không lưu ảnh thừa.
+                if image_filename:
+                    try:
+                        os.remove(os.path.join(CAPTURE_DIR, image_filename))
+                    except OSError:
+                        pass
+                logger.info(
+                    "Bỏ qua %s: đã điểm danh gần đây (còn %ss nữa mới ghi lại)",
+                    user_name, body.get("retry_after"),
+                )
+                return
             logger.info("Gửi API thành công: %s (sim=%.4f)", user_name, similarity)
         except requests.RequestException as e:
             logger.error("Gửi API thất bại: %s", e)

@@ -1,130 +1,98 @@
 {% extends "base.html" %}
-{% block title %}Dashboard - Điểm danh AI{% endblock %}
+{% block title %}Dashboard camera - Điểm danh AI{% endblock %}
 
 {% block content %}
-<!-- Stats Cards -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card stats-card bg-primary text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="card-title mb-0">Tổng nhân viên</h6>
-                        <h2 id="stat-total-users" class="mb-0 mt-2">0</h2>
-                    </div>
-                    <i class="bi bi-people-fill fs-1 opacity-50"></i>
+<!-- KPI -->
+<div class="row g-3 mb-4">
+    <div class="col-sm-6 col-xl-3">
+        <div class="kpi">
+            <div class="kpi-icon tone-blue"><i class="bi bi-people"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">Nhân viên</div>
+                <div class="kpi-value" id="stat-total-users">–</div>
+                <div class="kpi-foot">Đang được theo dõi</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="kpi">
+            <div class="kpi-icon tone-green"><i class="bi bi-person-check"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">Có mặt hôm nay</div>
+                <div class="kpi-value"><span id="stat-present">–</span> <small id="stat-present-total"></small></div>
+                <div class="progress" role="progressbar" aria-label="Tỷ lệ có mặt">
+                    <div class="progress-bar bg-success" id="stat-present-bar" style="width:0%"></div>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card stats-card bg-success text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="card-title mb-0">Điểm danh hôm nay</h6>
-                        <h2 id="stat-today" class="mb-0 mt-2">0</h2>
-                    </div>
-                    <i class="bi bi-check-circle-fill fs-1 opacity-50"></i>
-                </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="kpi">
+            <div class="kpi-icon tone-violet"><i class="bi bi-clipboard-check"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">Lượt điểm danh hôm nay</div>
+                <div class="kpi-value" id="stat-today">–</div>
+                <div class="kpi-foot">Tổng cộng <span id="stat-total-logs">–</span> lượt</div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card stats-card bg-info text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="card-title mb-0">Tổng lượt điểm danh</h6>
-                        <h2 id="stat-total-logs" class="mb-0 mt-2">0</h2>
-                    </div>
-                    <i class="bi bi-journal-check fs-1 opacity-50"></i>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stats-card bg-warning text-white">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="card-title mb-0">Người gần nhất</h6>
-                        <h5 id="stat-latest" class="mb-0 mt-2">--</h5>
-                    </div>
-                    <i class="bi bi-person-check-fill fs-1 opacity-50"></i>
-                </div>
+    <div class="col-sm-6 col-xl-3">
+        <div class="kpi">
+            <div class="kpi-icon tone-amber"><i class="bi bi-clock-history"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-label">Nhận diện gần nhất</div>
+                <div class="kpi-value text-name" id="stat-latest">–</div>
+                <div class="kpi-foot" id="stat-latest-meta">Chưa có dữ liệu</div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Realtime Feed + Today's Log -->
-<div class="row">
-    <!-- Realtime Feed -->
-    <div class="col-md-5">
-        <div class="card">
-            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-broadcast"></i> Nhận diện Realtime (Camera)</span>
-                <span class="badge bg-success" id="live-badge">LIVE</span>
+<div class="row g-3">
+    <!-- Camera -->
+    <div class="col-xl-7">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="panel-title"><i class="bi bi-camera-video"></i> Camera trực tiếp</span>
+                <span class="count-pill" id="cam-online-count">0/{{ cameras|length }} trực tuyến</span>
             </div>
-            <div class="card-body p-0">
-                {% for src in (camera_sources or [default_camera_source]) %}
-                <div data-camera-wrap class="border-bottom">
-                    <div class="bg-black" style="min-height: 200px;">
-                        <img
-                            data-camera-live-img
-                            data-camera-source="{{ src }}"
-                            src="{{ url_for('dashboard.camera_stream') }}?source={{ src | urlencode }}"
-                            alt="Camera live {{ loop.index }}"
-                            class="w-100"
-                            style="display:block;max-height:260px;object-fit:contain;background:#111;"
-                        >
-                    </div>
-                    <div class="px-3 py-2 bg-light">
-                        <div class="small text-muted">Nguồn camera {{ loop.index }}: {{ src }}</div>
-                        <div class="alert alert-warning mt-2 mb-0 d-none" data-camera-stream-error>
-                            Không lấy được hình trực tuyến từ camera {{ loop.index }}. Hệ thống sẽ tự thử kết nối lại.
+            <div class="cam-grid">
+                {% for cam in cameras %}
+                <div class="cam-tile" data-cam="{{ cam.index }}">
+                    <div class="cam-frame">
+                        <img alt="{{ cam.name }}" data-src="{{ url_for('dashboard.camera_stream') }}?cam={{ cam.index }}">
+                        <span class="cam-live-tag">LIVE</span>
+                        <div class="cam-overlay" data-overlay>
+                            <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+                            <span>Đang kết nối camera...</span>
                         </div>
+                    </div>
+                    <div class="cam-meta">
+                        <div>
+                            <div class="cam-name">{{ cam.name }}</div>
+                            <div class="cam-host"><i class="bi bi-hdd-network"></i> {{ cam.host }}</div>
+                        </div>
+                        <span class="cam-status" data-status>Đang kết nối</span>
                     </div>
                 </div>
                 {% endfor %}
-                <div id="realtime-feed" style="max-height: 220px; overflow-y: auto;">
-                    <div id="realtime-items">
-                        <div class="text-center text-muted py-5" id="no-data-msg">
-                            <i class="bi bi-camera-video-off fs-1"></i>
-                            <p class="mt-2">Đang chờ nhận diện...</p>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
 
-    <!-- Today's Attendance -->
-    <div class="col-md-7">
-        <div class="card">
-            <div class="card-header bg-dark text-white">
-                <i class="bi bi-calendar-check"></i> Điểm danh hôm nay
+    <!-- Điểm danh hôm nay -->
+    <div class="col-xl-5">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span class="panel-title"><i class="bi bi-calendar-check"></i> Điểm danh hôm nay
+                    <span class="count-pill" id="today-count">0</span>
+                </span>
+                <a href="/logs" class="btn btn-sm btn-light border">Xem lịch sử <i class="bi bi-arrow-right"></i></a>
             </div>
-            <div class="card-body p-0">
-                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
-                    <table class="table table-hover table-striped mb-0">
-                        <thead class="table-dark sticky-top">
-                            <tr>
-                                <th>#</th>
-                                <th>Khuôn mặt</th>
-                                <th>Tên</th>
-                                <th>Camera</th>
-                                <th>Thời gian</th>
-                                <th>Độ chính xác</th>
-                            </tr>
-                        </thead>
-                        <tbody id="today-logs-body">
-                            <tr>
-                                <td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu</td>
-                            </tr>
-                        </tbody>
-                    </table>
+            <div class="att-list" id="today-logs">
+                <div class="empty-state">
+                    <i class="bi bi-hourglass-split"></i>
+                    Đang tải dữ liệu...
                 </div>
             </div>
         </div>
@@ -134,103 +102,136 @@
 
 {% block extra_js %}
 <script>
-const cameraStreamUrl = '{{ url_for("dashboard.camera_stream") }}';
-const cameraSources = {{ (camera_sources or [default_camera_source]) | tojson }};
-const cameraRetryTimers = {};
+let totalUsers = 0;
+let highlightId = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     loadStats();
     loadTodayLogs();
-    initLiveCameraPreview();
-
-    // Auto refresh stats mỗi 30s
+    initCameras();
     setInterval(loadStats, 30000);
+    setInterval(loadTodayLogs, 60000);  // cập nhật "x phút trước"
 });
 
-function initLiveCameraPreview() {
-    const wraps = document.querySelectorAll('[data-camera-wrap]');
-    wraps.forEach(function(wrap, index) {
-        const liveImg = wrap.querySelector('[data-camera-live-img]');
-        const errorBox = wrap.querySelector('[data-camera-stream-error]');
-        if (!liveImg || !errorBox) return;
+/* ---------- Camera ---------- */
+function initCameras() {
+    document.querySelectorAll('.cam-tile').forEach(function(tile) {
+        const img = tile.querySelector('img');
+        const overlay = tile.querySelector('[data-overlay]');
+        const status = tile.querySelector('[data-status]');
+        let retryTimer = null;
 
-        liveImg.addEventListener('load', function() {
-            errorBox.classList.add('d-none');
+        function setState(state) {
+            tile.classList.toggle('online', state === 'online');
+            tile.classList.toggle('offline', state === 'offline');
+            if (state === 'online') {
+                overlay.classList.add('hidden');
+                status.textContent = 'Trực tuyến';
+            } else if (state === 'offline') {
+                overlay.classList.remove('hidden');
+                overlay.innerHTML = '<i class="bi bi-camera-video-off"></i><span>Mất kết nối camera</span>'
+                    + '<span style="font-size:.74rem;color:#64748b">Tự động thử lại sau 5 giây</span>';
+                status.textContent = 'Mất kết nối';
+            }
+            updateOnlineCount();
+        }
+
+        function connect() {
+            img.src = img.dataset.src + '&t=' + Date.now();
+        }
+
+        img.addEventListener('load', function() { setState('online'); });
+        img.addEventListener('error', function() {
+            setState('offline');
+            clearTimeout(retryTimer);
+            retryTimer = setTimeout(connect, 5000);
         });
-
-        liveImg.addEventListener('error', function() {
-            errorBox.classList.remove('d-none');
-            if (cameraRetryTimers[index]) return;
-
-            const src = liveImg.dataset.cameraSource || cameraSources[index] || '{{ default_camera_source }}';
-            cameraRetryTimers[index] = setTimeout(function() {
-                liveImg.src = cameraStreamUrl + '?source=' + encodeURIComponent(src) + '&t=' + Date.now();
-                cameraRetryTimers[index] = null;
-            }, 3000);
-        });
+        connect();
     });
 }
 
+function updateOnlineCount() {
+    const all = document.querySelectorAll('.cam-tile').length;
+    const on = document.querySelectorAll('.cam-tile.online').length;
+    document.getElementById('cam-online-count').textContent = on + '/' + all + ' trực tuyến';
+}
+
+/* ---------- Thống kê ---------- */
 function loadStats() {
     fetch('/api/stats')
         .then(r => r.json())
         .then(data => {
-            document.getElementById('stat-total-users').textContent = data.total_users;
-            document.getElementById('stat-today').textContent = data.today_attendance;
-            document.getElementById('stat-total-logs').textContent = data.total_logs;
+            totalUsers = data.total_users || 0;
+            setText('stat-total-users', totalUsers);
+            setText('stat-today', data.today_attendance ?? 0);
+            setText('stat-total-logs', data.total_logs ?? 0);
             if (data.latest) {
-                document.getElementById('stat-latest').textContent = data.latest.user_name;
+                setText('stat-latest', data.latest.user_name || 'Không rõ');
+                setText('stat-latest-meta', timeAgo(data.latest.time) + ' · Camera ' + (data.latest.camera_id || '—'));
             }
+            updatePresent();
         })
         .catch(err => console.error('Load stats error:', err));
 }
 
+let presentCount = 0;
+function updatePresent() {
+    setText('stat-present', presentCount);
+    setText('stat-present-total', totalUsers ? '/ ' + totalUsers : '');
+    const pct = totalUsers ? Math.round(presentCount * 100 / totalUsers) : 0;
+    document.getElementById('stat-present-bar').style.width = pct + '%';
+}
+
+/* ---------- Danh sách hôm nay ---------- */
 function loadTodayLogs() {
     fetch('/api/logs/today')
         .then(r => r.json())
-        .then(data => {
-            renderTodayLogs(data.logs);
-        })
+        .then(data => renderTodayLogs(data.logs || []))
         .catch(err => console.error('Load logs error:', err));
 }
 
 function renderTodayLogs(logs) {
-    const tbody = document.getElementById('today-logs-body');
-    if (!logs || logs.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu</td></tr>';
+    const box = document.getElementById('today-logs');
+    setText('today-count', logs.length);
+    presentCount = new Set(logs.filter(l => l.user_id != null).map(l => l.user_id)).size;
+    updatePresent();
+
+    if (!logs.length) {
+        box.innerHTML = '<div class="empty-state"><i class="bi bi-person-video"></i>Hôm nay chưa có ai được điểm danh</div>';
         return;
     }
 
-    function captureUrl(imageName) {
-        if (!imageName) return '';
-        return '/captures/' + encodeURIComponent(imageName);
-    }
-
-    tbody.innerHTML = logs.map((log, i) => `
-        <tr>
-            <td>${i + 1}</td>
-            <td>
-                ${log.image ? `<img src="${captureUrl(log.image)}" alt="face" style="width:48px;height:48px;object-fit:cover;" class="rounded border" />` : '<span class="text-muted">--</span>'}
-            </td>
-            <td><strong>${escapeHtml(log.user_name)}</strong></td>
-            <td><span class="badge bg-secondary">${escapeHtml(log.camera_id || '')}</span></td>
-            <td>${log.time}</td>
-            <td>
-                <span class="badge ${log.similarity >= 0.6 ? 'bg-success' : 'bg-warning'}">
-                    ${(log.similarity * 100).toFixed(1)}%
-                </span>
-            </td>
-        </tr>
-    `).join('');
+    box.innerHTML = logs.map(log => {
+        const sim = Number(log.similarity || 0);
+        const face = log.image
+            ? `<img class="att-face" src="/captures/${encodeURIComponent(log.image)}" alt="" loading="lazy">`
+            : `<div class="att-face"><i class="bi bi-person"></i></div>`;
+        return `
+        <div class="att-row ${log.id === highlightId ? 'is-new' : ''}">
+            ${face}
+            <div class="att-main">
+                <div class="att-name">${escapeHtml(log.user_name || 'Không rõ')}</div>
+                <div class="att-sub">
+                    <span><i class="bi bi-camera-video"></i> Camera ${escapeHtml(log.camera_id || '—')}</span>
+                    <span class="conf ${sim >= 0.6 ? 'high' : 'mid'}">${(sim * 100).toFixed(1)}%</span>
+                </div>
+            </div>
+            <div class="att-time">
+                <strong>${formatTime(log.time)}</strong>
+                <span class="att-sub">${timeAgo(log.time)}</span>
+            </div>
+        </div>`;
+    }).join('');
+    highlightId = null;
 }
 
-// Realtime: khi có nhận diện mới
+/* ---------- Realtime ---------- */
 function bindRealtimeSocketListener() {
     try {
         if (!socket || typeof socket.on !== 'function') return false;
         socket.off && socket.off('new_recognition');
         socket.on('new_recognition', function(data) {
-            addRealtimeCard(data);
+            highlightId = data.id;
             loadStats();
             loadTodayLogs();
         });
@@ -239,48 +240,35 @@ function bindRealtimeSocketListener() {
         return false;
     }
 }
-
-// dashboard.js sẽ initSocket() sau DOMContentLoaded; nên retry vài lần
 (function retryBindSocket(attemptsLeft) {
     if (bindRealtimeSocketListener()) return;
     if (attemptsLeft <= 0) return;
     setTimeout(function() { retryBindSocket(attemptsLeft - 1); }, 300);
 })(20);
 
-function addRealtimeCard(data) {
-    const feed = document.getElementById('realtime-items');
-    const noDataMsg = document.getElementById('no-data-msg');
-    if (noDataMsg) noDataMsg.remove();
+/* ---------- Tiện ích ---------- */
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+}
 
-    const card = document.createElement('div');
-    card.className = 'realtime-item border-bottom p-3 fade-in';
-    card.innerHTML = `
-        <div class="d-flex align-items-center">
-            <div class="me-3">
-                <i class="bi bi-person-circle fs-2 text-primary"></i>
-            </div>
-            <div class="flex-grow-1">
-                <strong>${escapeHtml(data.user_name)}</strong>
-                <br>
-                <small class="text-muted">
-                    <i class="bi bi-camera-video"></i> ${escapeHtml(data.camera_id || '')}
-                    &nbsp;|&nbsp;
-                    <i class="bi bi-clock"></i> ${data.time}
-                    &nbsp;|&nbsp;
-                    <span class="badge ${data.similarity >= 0.6 ? 'bg-success' : 'bg-warning'}">
-                        ${(data.similarity * 100).toFixed(1)}%
-                    </span>
-                </small>
-            </div>
-        </div>
-    `;
+function parseTime(s) {
+    return s ? new Date(String(s).replace(' ', 'T')) : null;
+}
 
-    feed.prepend(card);
+function formatTime(s) {
+    const d = parseTime(s);
+    return d && !isNaN(d) ? d.toLocaleTimeString('vi-VN', { hour12: false }) : (s || '');
+}
 
-    // Giới hạn 50 items
-    while (feed.children.length > 50) {
-        feed.removeChild(feed.lastChild);
-    }
+function timeAgo(s) {
+    const d = parseTime(s);
+    if (!d || isNaN(d)) return '';
+    const sec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    if (sec < 60) return 'vừa xong';
+    if (sec < 3600) return Math.floor(sec / 60) + ' phút trước';
+    if (sec < 86400) return Math.floor(sec / 3600) + ' giờ trước';
+    return Math.floor(sec / 86400) + ' ngày trước';
 }
 </script>
 {% endblock %}

@@ -38,6 +38,16 @@ NHAN_DIEN_DIEM_DANH/
     └── schema.sql            # SQL tạo bảng
 ```
 
+## Khởi động nhanh
+
+Bấm đúp **`KHOI_DONG.bat`** → mở giao diện khởi động:
+- **Khởi động tất cả**: chạy Flask + AI Service, tự mở dashboard http://localhost:5000 khi sẵn sàng
+- **Dừng tất cả / Khởi động lại**, điều khiển riêng từng service
+- Xem log trực tiếp của từng service (lưu thêm vào thư mục `logs/`)
+- Đóng cửa sổ sẽ dừng toàn bộ service
+
+Yêu cầu: Python 3.11 trong PATH, đã cài thư viện (chạy `setup.bat` một lần).
+
 ## Hướng dẫn cài đặt
 
 ### 1. Database (SQLite – không cần cài đặt)
@@ -91,8 +101,8 @@ Cấu hình camera RTSP trong `ai_service/config.py`:
 CAMERAS = [
     {
         "id": "cam_192_168_1_3",
-        "name": "Camera RTSP 192.168.1.53",
-        "rtsp_url": "rtsp://admin:admin1630688@192.168.1.53:554/onvif1",
+        "name": "Camera RTSP 192.168.1.4",
+        "rtsp_url": "rtsp://admin:admin1630688@192.168.1.4:554/onvif1",
     },
 ]
 ```

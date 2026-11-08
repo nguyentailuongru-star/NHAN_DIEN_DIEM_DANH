@@ -65,16 +65,10 @@ echo      (Chuyen du lieu MySQL cu: cd flask_app ^&^& python migrate_to_sqlite.p
 echo.
 echo   2. Khong can cai MySQL.
 echo.
-echo   3. Chay Flask:
-echo      cd flask_app
-echo      python app.py
-echo.
-echo   4. Dang ky khuon mat:
+echo   3. Dang ky khuon mat:
 echo      cd ai_service
 echo      python register_face.py "Nguyen Van A" NV001 "Phong IT"
 echo.
-echo   5. Chay AI Service:
-echo      cd ai_service
-echo      python main.py
+echo   4. Chay he thong: bam dup KHOI_DONG.bat
 echo.
 pause

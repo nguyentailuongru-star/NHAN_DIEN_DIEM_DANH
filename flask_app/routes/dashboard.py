@@ -76,18 +76,38 @@ def _camera_stream_generator(cap, cv2):
 @page_admin_required
 def index():
     """Trang dashboard chính."""
-    return render_template(
-        "dashboard.html",
-        default_camera_source=Config.DEFAULT_CAMERA_SOURCE,
-        camera_sources=Config.CAMERA_SOURCES,
-    )
+    return render_template("dashboard.html", cameras=_camera_list())
+
+
+def _camera_list():
+    """Danh sách camera để hiển thị: chỉ tên + IP, KHÔNG đưa user/mật khẩu RTSP ra trang web."""
+    from urllib.parse import urlparse
+
+    cams = []
+    for idx, src in enumerate(Config.CAMERA_SOURCES or [Config.DEFAULT_CAMERA_SOURCE]):
+        txt = str(src).strip()
+        if txt.isdigit():
+            host = f"Webcam {txt}"
+        else:
+            try:
+                u = urlparse(txt)
+                host = u.hostname or txt
+            except ValueError:
+                host = "Camera"
+        cams.append({"index": idx, "name": f"Camera {idx + 1}", "host": host})
+    return cams
 
 
 @dashboard_bp.route("/camera-stream")
 @page_admin_required
 def camera_stream():
     """Phát MJPEG trực tiếp từ camera/source cho dashboard."""
-    camera_source = (request.args.get("source") or Config.DEFAULT_CAMERA_SOURCE).strip() or Config.DEFAULT_CAMERA_SOURCE
+    cam_idx = request.args.get("cam", type=int)
+    sources = Config.CAMERA_SOURCES or [Config.DEFAULT_CAMERA_SOURCE]
+    if cam_idx is not None and 0 <= cam_idx < len(sources):
+        camera_source = str(sources[cam_idx]).strip()
+    else:
+        camera_source = (request.args.get("source") or Config.DEFAULT_CAMERA_SOURCE).strip() or Config.DEFAULT_CAMERA_SOURCE
     try:
         cap, cv2 = _open_camera_capture(camera_source)
     except Exception as e:

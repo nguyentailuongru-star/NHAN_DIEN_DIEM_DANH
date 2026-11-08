@@ -4,8 +4,8 @@
 CAMERAS = [
     {
         "id": "3",
-        "name": "Camera yosee 192.168.1.53",
-        "rtsp_url": "rtsp://admin:admin1630688@192.168.1.53:554/onvif1",
+        "name": "Camera yosee 192.168.1.4",
+        "rtsp_url": "rtsp://admin:admin1630688@192.168.1.4:554/onvif1",
     },
     {
         "id": "56",
