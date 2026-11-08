@@ -91,8 +91,8 @@ Cấu hình camera RTSP trong `ai_service/config.py`:
 CAMERAS = [
     {
         "id": "cam_192_168_1_3",
-        "name": "Camera RTSP 192.168.1.3",
-        "rtsp_url": "rtsp://admin:admin1630688@192.168.1.3:554/onvif1",
+        "name": "Camera RTSP 192.168.1.53",
+        "rtsp_url": "rtsp://admin:admin1630688@192.168.1.53:554/onvif1",
     },
 ]
 ```

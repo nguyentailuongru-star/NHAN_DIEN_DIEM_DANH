@@ -6,8 +6,8 @@ import os
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "nhan-dien-diem-danh-secret-key-2024")
     CAMERA_SOURCES = [
-        "rtsp://admin:admin1630688@192.168.1.3:554/onvif1",
-        "rtsp://admin:L2295266@192.168.1.135:554/cam/realmonitor?channel=1&subtype=0",
+        "rtsp://admin:admin1630688@192.168.1.53:554/onvif1",
+        "rtsp://admin:L2295266@192.168.1.135:54/cam/realmonitor?channel=1&subtype=0",
     ]
     DEFAULT_CAMERA_SOURCE = os.environ.get("DEFAULT_CAMERA_SOURCE", CAMERA_SOURCES[0])
 
