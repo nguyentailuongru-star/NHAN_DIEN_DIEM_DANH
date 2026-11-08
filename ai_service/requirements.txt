@@ -1,0 +1,11 @@
+# Môi trường: Python 3.11 (cài thẳng vào Python hệ thống, không dùng .venv)
+opencv-python>=4.8.0
+numpy>=1.24.0
+requests>=2.31.0
+
+# ONNX Runtime bản CPU.
+# GPU: GTX 1050 Ti (Pascal) KHÔNG chạy được onnxruntime-gpu mới (yêu cầu CUDA 13, đã bỏ Pascal).
+# Muốn dùng GPU phải cài CUDA 12 + cuDNN 9 và một bản onnxruntime-gpu build cho CUDA 12.
+onnxruntime>=1.17.0
+ultralytics>=8.2.0
+lap>=0.5.12   # ByteTrack (person tracking) của ultralytics

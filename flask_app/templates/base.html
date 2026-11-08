@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Hệ thống Điểm danh{% endblock %}</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ '/' if current_role == 'admin' else '/me' if current_role == 'employee' else '/login' }}">
+                <i class="bi bi-camera-video"></i> Điểm Danh AI
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    {% if current_role == 'admin' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}" href="/">
+                                <i class="bi bi-speedometer2"></i> Dashboard Camera
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.video_recognition' %}active{% endif %}" href="/video-recognition">
+                                <i class="bi bi-film"></i> Nhận dạng Video
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.behavior_video_page' %}active{% endif %}" href="/behavior-video">
+                                <i class="bi bi-bounding-box"></i> Hành vi qua video
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.group_camera_page' %}active{% endif %}" href="/group-camera">
+                                <i class="bi bi-camera"></i> Gom ảnh camera
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.group_video_page' %}active{% endif %}" href="/group-video">
+                                <i class="bi bi-collection-play"></i> Gom ảnh video
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.users_page' %}active{% endif %}" href="/users">
+                                <i class="bi bi-people"></i> Nhân viên
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.logs_page' %}active{% endif %}" href="/logs">
+                                <i class="bi bi-clock-history"></i> Danh sách điểm danh
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.teacher_notebook_page' %}active{% endif %}" href="/teacher-notebook">
+                                <i class="bi bi-journal-check"></i> Sổ tay giáo viên
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.attention_dashboard_page' %}active{% endif %}" href="/attention-dashboard">
+                                <i class="bi bi-bar-chart-line"></i> Dashboard Hành vi lớp
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.face_upload_requests_page' %}active{% endif %}" href="/face-uploads">
+                                <i class="bi bi-images"></i> Ảnh nhân viên gửi
+                            </a>
+                        </li>
+                    {% elif current_role == 'employee' %}
+                        <li class="nav-item">
+                            <a class="nav-link {% if request.endpoint == 'dashboard.my_attendance_page' %}active{% endif %}" href="/me">
+                                <i class="bi bi-person-check"></i> Điểm danh của tôi
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav ms-auto">
+                    {% if current_account %}
+                        <li class="nav-item">
+                            <span class="nav-link text-light">
+                                <i class="bi bi-person-badge"></i> {{ current_account.username }} ({{ current_account.role }})
+                            </span>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-light" href="/logout"><i class="bi bi-box-arrow-right"></i> Đăng xuất</a>
+                        </li>
+                        <li class="nav-item">
+                            <span class="nav-link text-light" id="connection-status">
+                                <i class="bi bi-circle-fill text-danger"></i> Offline
+                            </span>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link text-light" href="/login"><i class="bi bi-box-arrow-in-right"></i> Đăng nhập</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link text-light" href="/register"><i class="bi bi-person-plus"></i> Đăng ký</a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Content -->
+    <div class="container-fluid mt-3">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="row">
+                    <div class="col-12">
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.7.2/dist/socket.io.min.js"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

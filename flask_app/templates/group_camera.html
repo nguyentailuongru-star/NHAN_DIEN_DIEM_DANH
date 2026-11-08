@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Gom ảnh camera - Điểm danh AI{% endblock %}
+
+{% block extra_css %}
+<style>
+.cluster-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+    .cluster-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 1400px) {
+    .cluster-grid {
+        grid-template-columns: repeat(9, minmax(0, 1fr));
+    }
+}
+
+.cluster-card .card-body {
+    padding: 8px;
+}
+
+.cluster-card .card-title {
+    font-size: 0.82rem;
+    margin-bottom: 4px;
+}
+
+.cluster-card .small {
+    font-size: 0.72rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <i class="bi bi-camera"></i> Gom ảnh camera
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Chức năng này đọc từ camera/source, tự gom các khuôn mặt giống nhau vào thư mục
+                    <code>captures/grouped/camera/.../Chua_nhan_dang1, Chua_nhan_dang2...</code>.
+                </p>
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Camera Source</label>
+                        <input class="form-control" id="camSource" value="{{ default_camera_source }}" placeholder="0 hoặc rtsp://...">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Thời lượng (giây)</label>
+                        <input class="form-control" id="camDuration" type="number" min="3" max="600" value="20">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Lấy mẫu (giây)</label>
+                        <input class="form-control" id="camInterval" type="number" min="0.1" max="5" step="0.1" value="0.6">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Ngưỡng giống</label>
+                        <input class="form-control" id="camThreshold" type="number" min="0.3" max="0.95" step="0.01" value="0.58">
+                    </div>
+                    <div class="col-md-3 d-flex gap-2">
+                        <button class="btn btn-primary" id="btnCamStart" onclick="startCameraGrouping()">
+                            <i class="bi bi-play-fill"></i> Bắt đầu gom ảnh
+                        </button>
+                        <button class="btn btn-outline-secondary" onclick="loadCameraGroupingStatus()">
+                            <i class="bi bi-arrow-clockwise"></i> Làm mới
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-3 d-flex align-items-center gap-2">
+                    <span class="badge bg-secondary" id="camJobStatus">Idle</span>
+                    <small class="text-muted" id="camJobInfo">Chưa có job.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <i class="bi bi-info-circle"></i> Kết quả gom ảnh
+            </div>
+            <div class="card-body" id="camResultWrap">
+                <div class="text-muted">Chưa có dữ liệu.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let camPolling = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadCameraGroupingStatus();
+    camPolling = setInterval(loadCameraGroupingStatus, 2500);
+});
+
+function startCameraGrouping() {
+    const payload = {
+        camera_source: document.getElementById('camSource').value.trim() || '{{ default_camera_source }}',
+        duration_sec: parseFloat(document.getElementById('camDuration').value || '20'),
+        sample_interval: parseFloat(document.getElementById('camInterval').value || '0.6'),
+        threshold: parseFloat(document.getElementById('camThreshold').value || '0.58')
+    };
+
+    fetch('/api/grouping/camera/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Không thể start job camera');
+        renderCameraJob(data);
+    })
+    .catch(err => alert(err.message || 'Có lỗi khi start job camera'));
+}
+
+function loadCameraGroupingStatus() {
+    fetch('/api/grouping/status?source=camera')
+        .then(r => r.json())
+        .then(renderCameraJob)
+        .catch(() => {});
+}
+
+function renderCameraJob(job) {
+    const badge = document.getElementById('camJobStatus');
+    const info = document.getElementById('camJobInfo');
+
+    if (!job || job.status === 'idle') {
+        badge.className = 'badge bg-secondary';
+        badge.textContent = 'Idle';
+        info.textContent = 'Chưa có job.';
+        return;
+    }
+
+    if (job.status === 'running') {
+        badge.className = 'badge bg-primary';
+    } else if (job.status === 'done') {
+        badge.className = 'badge bg-success';
+    } else {
+        badge.className = 'badge bg-danger';
+    }
+
+    badge.textContent = job.status;
+
+    const p = job.progress || {};
+    info.textContent = `Job: ${job.id || '--'} | Frames đọc: ${p.frames_read || 0} | Frames xử lý: ${p.frames_sampled || 0} | Faces hợp lệ: ${p.faces_found || 0} | Loại mờ: ${p.skipped_blur || 0} | Loại <2/3 mặt: ${p.skipped_partial || 0} | Loại mặt nghiêng: ${p.skipped_side_face || 0} | Loại mặt nhỏ: ${p.skipped_small_face || 0}`;
+
+    const wrap = document.getElementById('camResultWrap');
+    if (job.status === 'failed') {
+        wrap.innerHTML = `<div class="alert alert-danger mb-0">${escapeHtml(job.error || 'Job thất bại')}</div>`;
+        return;
+    }
+
+    if (!job.result) {
+        wrap.innerHTML = '<div class="text-muted">Đang xử lý hoặc chưa có kết quả.</div>';
+        return;
+    }
+
+    const r = job.result;
+    const clusters = r.clusters || [];
+
+    let html = `
+        <div class="mb-2"><strong>Thư mục output:</strong> ${escapeHtml(r.output_dir || '--')}</div>
+        <div class="mb-2"><strong>Số cụm:</strong> ${clusters.length} | <strong>Tổng ảnh lưu:</strong> ${r.total_faces_saved || 0}</div>
+        <div class="mb-2"><strong>Ảnh bị loại:</strong> mờ ${r.skipped_blur || 0}, thiếu &lt;2/3 mặt ${r.skipped_partial || 0}</div>
+        <div class="mb-2"><strong>Bổ sung loại:</strong> mặt nghiêng/không rõ ${r.skipped_side_face || 0}, mặt quá nhỏ ${r.skipped_small_face || 0}</div>
+    `;
+
+    if (!clusters.length) {
+        html += '<div class="alert alert-warning mb-0">Không tìm thấy khuôn mặt hợp lệ để gom.</div>';
+        wrap.innerHTML = html;
+        return;
+    }
+
+    html += '<div class="cluster-grid">';
+    for (const c of clusters) {
+        html += `
+            <div class="card h-100 cluster-card">
+                ${c.preview ? `<img src="${c.preview}" class="card-img-top" style="height:105px;object-fit:cover;" alt="preview">` : ''}
+                <div class="card-body">
+                    <h6 class="card-title mb-2">${escapeHtml(c.name || '--')}</h6>
+                    <div class="small text-muted mb-1">${escapeHtml(c.folder || '--')}</div>
+                    <div class="small">Số ảnh: <strong>${c.count || 0}</strong></div>
+                </div>
+            </div>
+        `;
+    }
+    html += '</div>';
+
+    wrap.innerHTML = html;
+}
+</script>
+{% endblock %}

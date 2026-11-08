@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Điểm danh AI{% endblock %}
+
+{% block content %}
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stats-card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Tổng nhân viên</h6>
+                        <h2 id="stat-total-users" class="mb-0 mt-2">0</h2>
+                    </div>
+                    <i class="bi bi-people-fill fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stats-card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Điểm danh hôm nay</h6>
+                        <h2 id="stat-today" class="mb-0 mt-2">0</h2>
+                    </div>
+                    <i class="bi bi-check-circle-fill fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stats-card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Tổng lượt điểm danh</h6>
+                        <h2 id="stat-total-logs" class="mb-0 mt-2">0</h2>
+                    </div>
+                    <i class="bi bi-journal-check fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stats-card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Người gần nhất</h6>
+                        <h5 id="stat-latest" class="mb-0 mt-2">--</h5>
+                    </div>
+                    <i class="bi bi-person-check-fill fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Realtime Feed + Today's Log -->
+<div class="row">
+    <!-- Realtime Feed -->
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-broadcast"></i> Nhận diện Realtime (Camera)</span>
+                <span class="badge bg-success" id="live-badge">LIVE</span>
+            </div>
+            <div class="card-body p-0">
+                {% for src in (camera_sources or [default_camera_source]) %}
+                <div data-camera-wrap class="border-bottom">
+                    <div class="bg-black" style="min-height: 200px;">
+                        <img
+                            data-camera-live-img
+                            data-camera-source="{{ src }}"
+                            src="{{ url_for('dashboard.camera_stream') }}?source={{ src | urlencode }}"
+                            alt="Camera live {{ loop.index }}"
+                            class="w-100"
+                            style="display:block;max-height:260px;object-fit:contain;background:#111;"
+                        >
+                    </div>
+                    <div class="px-3 py-2 bg-light">
+                        <div class="small text-muted">Nguồn camera {{ loop.index }}: {{ src }}</div>
+                        <div class="alert alert-warning mt-2 mb-0 d-none" data-camera-stream-error>
+                            Không lấy được hình trực tuyến từ camera {{ loop.index }}. Hệ thống sẽ tự thử kết nối lại.
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+                <div id="realtime-feed" style="max-height: 220px; overflow-y: auto;">
+                    <div id="realtime-items">
+                        <div class="text-center text-muted py-5" id="no-data-msg">
+                            <i class="bi bi-camera-video-off fs-1"></i>
+                            <p class="mt-2">Đang chờ nhận diện...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Today's Attendance -->
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <i class="bi bi-calendar-check"></i> Điểm danh hôm nay
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th>#</th>
+                                <th>Khuôn mặt</th>
+                                <th>Tên</th>
+                                <th>Camera</th>
+                                <th>Thời gian</th>
+                                <th>Độ chính xác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="today-logs-body">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const cameraStreamUrl = '{{ url_for("dashboard.camera_stream") }}';
+const cameraSources = {{ (camera_sources or [default_camera_source]) | tojson }};
+const cameraRetryTimers = {};
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadStats();
+    loadTodayLogs();
+    initLiveCameraPreview();
+
+    // Auto refresh stats mỗi 30s
+    setInterval(loadStats, 30000);
+});
+
+function initLiveCameraPreview() {
+    const wraps = document.querySelectorAll('[data-camera-wrap]');
+    wraps.forEach(function(wrap, index) {
+        const liveImg = wrap.querySelector('[data-camera-live-img]');
+        const errorBox = wrap.querySelector('[data-camera-stream-error]');
+        if (!liveImg || !errorBox) return;
+
+        liveImg.addEventListener('load', function() {
+            errorBox.classList.add('d-none');
+        });
+
+        liveImg.addEventListener('error', function() {
+            errorBox.classList.remove('d-none');
+            if (cameraRetryTimers[index]) return;
+
+            const src = liveImg.dataset.cameraSource || cameraSources[index] || '{{ default_camera_source }}';
+            cameraRetryTimers[index] = setTimeout(function() {
+                liveImg.src = cameraStreamUrl + '?source=' + encodeURIComponent(src) + '&t=' + Date.now();
+                cameraRetryTimers[index] = null;
+            }, 3000);
+        });
+    });
+}
+
+function loadStats() {
+    fetch('/api/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-total-users').textContent = data.total_users;
+            document.getElementById('stat-today').textContent = data.today_attendance;
+            document.getElementById('stat-total-logs').textContent = data.total_logs;
+            if (data.latest) {
+                document.getElementById('stat-latest').textContent = data.latest.user_name;
+            }
+        })
+        .catch(err => console.error('Load stats error:', err));
+}
+
+function loadTodayLogs() {
+    fetch('/api/logs/today')
+        .then(r => r.json())
+        .then(data => {
+            renderTodayLogs(data.logs);
+        })
+        .catch(err => console.error('Load logs error:', err));
+}
+
+function renderTodayLogs(logs) {
+    const tbody = document.getElementById('today-logs-body');
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu</td></tr>';
+        return;
+    }
+
+    function captureUrl(imageName) {
+        if (!imageName) return '';
+        return '/captures/' + encodeURIComponent(imageName);
+    }
+
+    tbody.innerHTML = logs.map((log, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td>
+                ${log.image ? `<img src="${captureUrl(log.image)}" alt="face" style="width:48px;height:48px;object-fit:cover;" class="rounded border" />` : '<span class="text-muted">--</span>'}
+            </td>
+            <td><strong>${escapeHtml(log.user_name)}</strong></td>
+            <td><span class="badge bg-secondary">${escapeHtml(log.camera_id || '')}</span></td>
+            <td>${log.time}</td>
+            <td>
+                <span class="badge ${log.similarity >= 0.6 ? 'bg-success' : 'bg-warning'}">
+                    ${(log.similarity * 100).toFixed(1)}%
+                </span>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Realtime: khi có nhận diện mới
+function bindRealtimeSocketListener() {
+    try {
+        if (!socket || typeof socket.on !== 'function') return false;
+        socket.off && socket.off('new_recognition');
+        socket.on('new_recognition', function(data) {
+            addRealtimeCard(data);
+            loadStats();
+            loadTodayLogs();
+        });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// dashboard.js sẽ initSocket() sau DOMContentLoaded; nên retry vài lần
+(function retryBindSocket(attemptsLeft) {
+    if (bindRealtimeSocketListener()) return;
+    if (attemptsLeft <= 0) return;
+    setTimeout(function() { retryBindSocket(attemptsLeft - 1); }, 300);
+})(20);
+
+function addRealtimeCard(data) {
+    const feed = document.getElementById('realtime-items');
+    const noDataMsg = document.getElementById('no-data-msg');
+    if (noDataMsg) noDataMsg.remove();
+
+    const card = document.createElement('div');
+    card.className = 'realtime-item border-bottom p-3 fade-in';
+    card.innerHTML = `
+        <div class="d-flex align-items-center">
+            <div class="me-3">
+                <i class="bi bi-person-circle fs-2 text-primary"></i>
+            </div>
+            <div class="flex-grow-1">
+                <strong>${escapeHtml(data.user_name)}</strong>
+                <br>
+                <small class="text-muted">
+                    <i class="bi bi-camera-video"></i> ${escapeHtml(data.camera_id || '')}
+                    &nbsp;|&nbsp;
+                    <i class="bi bi-clock"></i> ${data.time}
+                    &nbsp;|&nbsp;
+                    <span class="badge ${data.similarity >= 0.6 ? 'bg-success' : 'bg-warning'}">
+                        ${(data.similarity * 100).toFixed(1)}%
+                    </span>
+                </small>
+            </div>
+        </div>
+    `;
+
+    feed.prepend(card);
+
+    // Giới hạn 50 items
+    while (feed.children.length > 50) {
+        feed.removeChild(feed.lastChild);
+    }
+}
+</script>
+{% endblock %}

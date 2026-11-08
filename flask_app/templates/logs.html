@@ -1,0 +1,385 @@
+{% extends "base.html" %}
+{% block title %}Lịch sử Điểm danh - Điểm danh AI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-clock-history"></i> Lịch sử Điểm danh</span>
+                <div class="d-flex gap-2">
+                    <input type="date" class="form-control form-control-sm" id="filterDate" style="width: 160px;">
+                    <button class="btn btn-outline-light btn-sm" onclick="filterLogs()">
+                        <i class="bi bi-funnel"></i> Lọc
+                    </button>
+                    <button class="btn btn-outline-light btn-sm" onclick="clearFilter()">
+                        <i class="bi bi-x-circle"></i> Xóa lọc
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteAllLogs()">
+                        <i class="bi bi-trash3"></i> Xóa toàn bộ điểm danh
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>Phòng</th>
+                                <th>Số lượt điểm danh</th>
+                                <th>Số người</th>
+                                <th>Camera</th>
+                                <th>Lần điểm danh gần nhất</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-body">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">Đang tải...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <span id="logs-info" class="text-muted">Tổng: 0</span>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="logs-pagination"></ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="roomLogsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-door-open"></i> Chi tiết điểm danh: <span id="room-logs-title">--</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>#</th>
+                                <th>Tên</th>
+                                <th>Camera</th>
+                                <th>Thời gian</th>
+                                <th>Độ chính xác</th>
+                                <th>Ảnh</th>
+                                <th>Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="room-logs-body">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted py-4">Chọn phòng để xem dữ liệu</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between align-items-center">
+                <span id="room-logs-info" class="text-muted">Tổng: 0</span>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="room-logs-pagination"></ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentPage = 1;
+let currentDate = '';
+let roomLogsPage = 1;
+let roomLogsModal = null;
+let activeRoomFilter = {
+    departmentId: null,
+    roomName: '',
+    unassigned: false,
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Set ngày mặc định = hôm nay
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('filterDate').value = today;
+    currentDate = today;
+    loadLogs();
+});
+
+function filterLogs() {
+    currentDate = document.getElementById('filterDate').value;
+    currentPage = 1;
+    loadLogs();
+}
+
+function clearFilter() {
+    document.getElementById('filterDate').value = '';
+    currentDate = '';
+    currentPage = 1;
+    loadLogs();
+}
+
+function deleteAllLogs() {
+    const ok = confirm('Bạn có chắc muốn xóa TOÀN BỘ danh sách điểm danh và ảnh crop liên quan?');
+    if (!ok) return;
+
+    fetch('/api/logs/all?delete_crops=1', { method: 'DELETE' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.status === 'ok') {
+                const c = result.crop_cleanup || {};
+                alert(
+                    `Đã xóa ${result.deleted_logs || 0} bản ghi điểm danh.\n` +
+                    `Ảnh crop: xóa ${c.deleted || 0}, thiếu ${c.missing || 0}, bỏ qua ${c.skipped || 0}.`
+                );
+                currentPage = 1;
+                loadLogs();
+                return;
+            }
+            alert('Lỗi: ' + (result.error || 'Không xác định'));
+        })
+        .catch(err => alert('Lỗi: ' + err));
+}
+
+function loadLogs(page) {
+    if (page) currentPage = page;
+
+    let url = `/api/logs?page=${currentPage}&per_page=30`;
+    if (currentDate) url += `&date=${currentDate}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            renderLogs(data.logs);
+            renderPagination(data.page, data.pages, data.total);
+        })
+        .catch(err => console.error('Load logs error:', err));
+}
+
+function renderLogs(logs) {
+    const tbody = document.getElementById('logs-body');
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Không có dữ liệu</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = logs.map((log, i) => `
+        <tr>
+            <td>${(currentPage - 1) * 30 + i + 1}</td>
+            <td>
+                <a href="#" class="fw-semibold" onclick="openRoomLogs(${log.department_id == null ? 'null' : Number(log.department_id)}, ${log.department_id == null ? 'true' : 'false'}, '${escapeHtml(log.room_name || 'Chua phan phong').replace(/'/g, '&#39;')}'); return false;">
+                    ${escapeHtml(log.room_name || 'Chua phan phong')}
+                </a>
+            </td>
+            <td>
+                <span class="badge bg-primary">${log.attendance_count || 0}</span>
+            </td>
+            <td><span class="badge bg-info text-dark">${log.unique_users || 0}</span></td>
+            <td>
+                ${Array.isArray(log.cameras) && log.cameras.length
+                    ? log.cameras.map(cam => `<span class="badge bg-secondary me-1">${escapeHtml(cam)}</span>`).join('')
+                    : '--'}
+            </td>
+            <td>${log.last_time || '--'}</td>
+        </tr>
+    `).join('');
+}
+
+function renderPagination(page, pages, total) {
+    document.getElementById('logs-info').textContent = `Tổng: ${total} phòng | Trang ${page}/${pages}`;
+
+    const pagination = document.getElementById('logs-pagination');
+    if (pages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    // Previous
+    html += `<li class="page-item ${page <= 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadLogs(${page - 1}); return false;">&laquo;</a>
+    </li>`;
+
+    // Pages
+    const startPage = Math.max(1, page - 2);
+    const endPage = Math.min(pages, page + 2);
+
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === page ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="loadLogs(${i}); return false;">${i}</a>
+        </li>`;
+    }
+
+    // Next
+    html += `<li class="page-item ${page >= pages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadLogs(${page + 1}); return false;">&raquo;</a>
+    </li>`;
+
+    pagination.innerHTML = html;
+}
+
+function getRoomLogsModal() {
+    if (!roomLogsModal) {
+        const modalEl = document.getElementById('roomLogsModal');
+        roomLogsModal = new bootstrap.Modal(modalEl);
+    }
+    return roomLogsModal;
+}
+
+function openRoomLogs(departmentId, isUnassigned, roomName) {
+    activeRoomFilter = {
+        departmentId: departmentId,
+        roomName: roomName || 'Chua phan phong',
+        unassigned: !!isUnassigned,
+    };
+    roomLogsPage = 1;
+    document.getElementById('room-logs-title').textContent = activeRoomFilter.roomName;
+    getRoomLogsModal().show();
+    loadRoomLogs();
+}
+
+function loadRoomLogs(page) {
+    if (page) roomLogsPage = page;
+
+    let url = `/api/logs?page=${roomLogsPage}&per_page=20`;
+    if (currentDate) url += `&date=${encodeURIComponent(currentDate)}`;
+
+    if (activeRoomFilter.unassigned) {
+        url += '&unassigned=1';
+    } else if (activeRoomFilter.departmentId !== null && activeRoomFilter.departmentId !== undefined) {
+        url += `&department_id=${encodeURIComponent(activeRoomFilter.departmentId)}`;
+    }
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            renderRoomLogs(data.logs || []);
+            renderRoomLogsPagination(data.page || 1, data.pages || 1, data.total || 0);
+        })
+        .catch(err => {
+            console.error('Load room logs error:', err);
+            document.getElementById('room-logs-body').innerHTML =
+                '<tr><td colspan="6" class="text-center text-danger py-4">Không tải được dữ liệu</td></tr>';
+        });
+}
+
+function buildCaptureUrl(imagePath) {
+    if (!imagePath) return '';
+    let rel = String(imagePath).replace(/\\/g, '/');
+    if (rel.startsWith('captures/')) {
+        rel = rel.slice('captures/'.length);
+    }
+    rel = rel.replace(/^\/+/, '');
+    return `/captures/${encodeURI(rel)}`;
+}
+
+function renderRoomLogs(logs) {
+    const tbody = document.getElementById('room-logs-body');
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Không có dữ liệu</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = logs.map((log, i) => `
+        <tr>
+            <td>${(roomLogsPage - 1) * 20 + i + 1}</td>
+            <td><strong>${escapeHtml(log.user_name || 'Unknown')}</strong></td>
+            <td><span class="badge bg-secondary">${escapeHtml(log.camera_id || '')}</span></td>
+            <td>${log.time || '--'}</td>
+            <td>
+                ${typeof log.similarity === 'number'
+                    ? `<span class="badge ${log.similarity >= 0.6 ? 'bg-success' : 'bg-warning'}">${(log.similarity * 100).toFixed(1)}%</span>`
+                    : '--'}
+            </td>
+            <td>
+                ${log.image
+                    ? `<a href="${buildCaptureUrl(log.image)}" target="_blank" rel="noopener" class="text-primary"><i class="bi bi-image"></i></a>`
+                    : '--'}
+            </td>
+            <td>
+                ${log.user_id
+                    ? `<button class="btn btn-sm btn-outline-danger" onclick="deleteLogsByUser(${Number(log.user_id)}, '${escapeHtml(log.user_name || 'Unknown').replace(/'/g, '&#39;')}')">
+                        <i class="bi bi-trash"></i> Xóa người này
+                    </button>`
+                    : '--'}
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderRoomLogsPagination(page, pages, total) {
+    document.getElementById('room-logs-info').textContent = `Tổng: ${total} bản ghi | Trang ${page}/${pages}`;
+
+    const pagination = document.getElementById('room-logs-pagination');
+    if (pages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+    html += `<li class="page-item ${page <= 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadRoomLogs(${page - 1}); return false;">&laquo;</a>
+    </li>`;
+
+    const startPage = Math.max(1, page - 2);
+    const endPage = Math.min(pages, page + 2);
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<li class="page-item ${i === page ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="loadRoomLogs(${i}); return false;">${i}</a>
+        </li>`;
+    }
+
+    html += `<li class="page-item ${page >= pages ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="loadRoomLogs(${page + 1}); return false;">&raquo;</a>
+    </li>`;
+
+    pagination.innerHTML = html;
+}
+
+function deleteLogsByUser(userId, userName) {
+    if (!userId) return;
+
+    const ok = confirm(`Bạn có chắc muốn xóa toàn bộ điểm danh của "${userName}" và ảnh crop liên quan?`);
+    if (!ok) return;
+
+    fetch(`/api/logs/user/${userId}?delete_crops=1`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.status === 'ok') {
+                const c = result.crop_cleanup || {};
+                alert(
+                    `Đã xóa ${result.deleted_logs || 0} bản ghi điểm danh của ${userName}.\n` +
+                    `Ảnh crop: xóa ${c.deleted || 0}, thiếu ${c.missing || 0}, bỏ qua ${c.skipped || 0}.`
+                );
+                loadLogs();
+                loadRoomLogs();
+                return;
+            }
+            alert('Lỗi: ' + (result.error || 'Không xác định'));
+        })
+        .catch(err => alert('Lỗi: ' + err));
+}
+
+// Realtime update
+if (typeof socket !== 'undefined') {
+    socket.on('new_recognition', function(data) {
+        // Reload nếu đang xem ngày hôm nay
+        const today = new Date().toISOString().split('T')[0];
+        if (!currentDate || currentDate === today) {
+            loadLogs();
+            if (roomLogsModal && document.getElementById('roomLogsModal').classList.contains('show')) {
+                loadRoomLogs();
+            }
+        }
+    });
+}
+</script>
+{% endblock %}

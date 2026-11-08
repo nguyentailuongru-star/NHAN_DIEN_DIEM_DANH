@@ -1,0 +1,421 @@
+{% extends "base.html" %}
+{% block title %}Nhận dạng Video - Điểm danh AI{% endblock %}
+
+{% block content %}
+<!-- Control + Stats (single row on desktop) -->
+<div class="row mb-4 g-3 align-items-stretch">
+    <div class="col-12 col-xl-5">
+        <div class="card h-100">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-film"></i> Điểm danh từ video (offline)</span>
+                <a href="/attention-dashboard" class="btn btn-sm btn-outline-light">
+                    <i class="bi bi-bar-chart-line"></i> Dashboard Hành vi lớp
+                </a>
+            </div>
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12">
+                        <select class="form-select" id="videoSelect"></select>
+                        <small class="text-muted" id="videoRootHint"></small>
+                    </div>
+                    <div class="col-md-6">
+                        <input class="form-control" id="videoCameraId" value="video" placeholder="video_cam01">
+                    </div>
+                    <div class="col-md-6 d-flex gap-2">
+                        <button class="btn btn-primary flex-fill" id="btnVideoStart" onclick="startVideoAttendance()">
+                            <i class="bi bi-play-fill"></i> Start
+                        </button>
+                        <button class="btn btn-outline-danger flex-fill" id="btnVideoStop" onclick="stopVideoAttendance()">
+                            <i class="bi bi-stop-fill"></i> Stop
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <span class="badge bg-secondary" id="videoStatusBadge">Idle</span>
+                    <small class="text-muted" id="videoStatusText"></small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-7">
+        <div class="row g-3 h-100">
+            <div class="col-sm-6 col-xxl-3">
+        <div class="card stats-card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Tổng nhân viên</h6>
+                        <h2 id="stat-total-users" class="mb-0 mt-2">0</h2>
+                    </div>
+                    <i class="bi bi-people-fill fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xxl-3">
+        <div class="card stats-card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Điểm danh hôm nay</h6>
+                        <h2 id="stat-today" class="mb-0 mt-2">0</h2>
+                    </div>
+                    <i class="bi bi-check-circle-fill fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xxl-3">
+        <div class="card stats-card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Tổng lượt điểm danh</h6>
+                        <h2 id="stat-total-logs" class="mb-0 mt-2">0</h2>
+                    </div>
+                    <i class="bi bi-journal-check fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-sm-6 col-xxl-3">
+        <div class="card stats-card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-0">Người gần nhất</h6>
+                        <h5 id="stat-latest" class="mb-0 mt-2">--</h5>
+                    </div>
+                    <i class="bi bi-person-check-fill fs-1 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+        </div>
+    </div>
+</div>
+
+<!-- Realtime Feed + Today's Log -->
+<div class="row">
+    <!-- Realtime Feed -->
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-broadcast"></i> Nhận diện Realtime</span>
+                <span class="badge bg-success" id="live-badge">LIVE</span>
+            </div>
+            <div class="card-body p-0" id="realtime-feed" style="max-height: 500px; overflow-y: auto;">
+                <div class="p-2 border-bottom bg-light">
+                    <video id="offlineVideoPlayer" class="w-100" style="max-height: 280px;" controls muted playsinline></video>
+                    <small class="text-muted d-block mt-1" id="offlineVideoHint">Chọn video ở mục phía trên để phát.</small>
+                </div>
+                <div id="realtime-items">
+                    <div class="text-center text-muted py-5" id="no-data-msg">
+                        <i class="bi bi-camera-video-off fs-1"></i>
+                        <p class="mt-2">Đang chờ nhận diện...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Today's Attendance -->
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header bg-dark text-white">
+                <i class="bi bi-calendar-check"></i> Điểm danh hôm nay
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th>#</th>
+                                <th>Khuôn mặt</th>
+                                <th>Tên</th>
+                                <th>Camera</th>
+                                <th>Thời gian</th>
+                                <th>Độ chính xác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="today-logs-body">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadVideoList();
+    bindVideoPlayerEvents();
+    setInterval(refreshVideoStatus, 3000);
+
+    loadStats();
+    loadTodayLogs();
+
+    // Auto refresh stats mỗi 30s
+    setInterval(loadStats, 30000);
+});
+
+function videoUrl(name) {
+    if (!name) return '';
+    return '/video/' + encodeURIComponent(name);
+}
+
+function setVideoPlayerSource(name, autoplay=false) {
+    const player = document.getElementById('offlineVideoPlayer');
+    const hint = document.getElementById('offlineVideoHint');
+    if (!player) return;
+
+    if (!name) {
+        player.removeAttribute('src');
+        player.load();
+        if (hint) hint.textContent = 'Chọn video ở mục phía trên để phát.';
+        return;
+    }
+
+    const url = videoUrl(name);
+    if (player.getAttribute('src') !== url) {
+        player.setAttribute('src', url);
+        player.load();
+    }
+    if (hint) hint.textContent = name;
+    if (autoplay) {
+        const p = player.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
+}
+
+function bindVideoPlayerEvents() {
+    const sel = document.getElementById('videoSelect');
+    if (!sel) return;
+    sel.addEventListener('change', function() {
+        setVideoPlayerSource(sel.value, false);
+    });
+}
+
+function loadVideoList() {
+    fetch('/api/videos')
+        .then(r => r.json())
+        .then(data => {
+            const sel = document.getElementById('videoSelect');
+            sel.innerHTML = '';
+
+            const hint = document.getElementById('videoRootHint');
+            hint.textContent = data.root ? `Đặt video tại: ${data.root}` : '';
+
+            const vids = data.videos || [];
+            if (vids.length === 0) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'Không có video trong thư mục video/';
+                sel.appendChild(opt);
+            } else {
+                for (const v of vids) {
+                    const opt = document.createElement('option');
+                    opt.value = v.name;
+                    opt.textContent = v.name;
+                    sel.appendChild(opt);
+                }
+            }
+
+            // Auto preview video đã chọn
+            setVideoPlayerSource(sel.value, false);
+            updateVideoStatusUI(data.status);
+        })
+        .catch(err => console.error('Load videos error:', err));
+}
+
+function refreshVideoStatus() {
+    fetch('/api/videos/status')
+        .then(r => r.json())
+        .then(data => updateVideoStatusUI(data.status))
+        .catch(() => {});
+}
+
+function updateVideoStatusUI(status) {
+    const badge = document.getElementById('videoStatusBadge');
+    const text = document.getElementById('videoStatusText');
+    const startBtn = document.getElementById('btnVideoStart');
+    const stopBtn = document.getElementById('btnVideoStop');
+
+    const running = status && status.running;
+    if (running) {
+        badge.className = 'badge bg-success';
+        badge.textContent = 'Running';
+        const pidTxt = status.pid ? `PID: ${status.pid}` : '';
+        const logTxt = status && (status.stderr_log || status.stdout_log)
+            ? ` | Log: ${status.stderr_log || status.stdout_log}`
+            : '';
+        text.textContent = pidTxt + logTxt;
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+    } else {
+        badge.className = 'badge bg-secondary';
+        badge.textContent = 'Idle';
+        const exitTxt = status && typeof status.exit_code !== 'undefined' ? `Exit: ${status.exit_code}` : '';
+        const logTxt = status && (status.stderr_log || status.stdout_log)
+            ? ` | Log: ${status.stderr_log || status.stdout_log}`
+            : '';
+        text.textContent = exitTxt + logTxt;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+    }
+}
+
+function startVideoAttendance() {
+    const video = document.getElementById('videoSelect').value;
+    const cameraId = document.getElementById('videoCameraId').value.trim() || 'video';
+    if (!video) {
+        alert('Vui lòng chọn video trong thư mục video/');
+        return;
+    }
+
+    // Phát video trên web đồng thời với tiến trình điểm danh
+    setVideoPlayerSource(video, true);
+
+    fetch('/api/videos/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video: video, camera_id: cameraId }),
+    })
+    .then(r => r.json().then(j => ({ ok: r.ok, status: r.status, json: j })))
+    .then(({ ok, json }) => {
+        if (!ok) {
+            alert('Lỗi: ' + (json.error || 'Không xác định'));
+            updateVideoStatusUI(json.status);
+            return;
+        }
+        refreshVideoStatus();
+    })
+    .catch(err => alert('Lỗi kết nối: ' + err));
+}
+
+function stopVideoAttendance() {
+    fetch('/api/videos/stop', { method: 'POST' })
+        .then(() => refreshVideoStatus())
+        .catch(() => {});
+}
+
+function loadStats() {
+    fetch('/api/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-total-users').textContent = data.total_users;
+            document.getElementById('stat-today').textContent = data.today_attendance;
+            document.getElementById('stat-total-logs').textContent = data.total_logs;
+            if (data.latest) {
+                document.getElementById('stat-latest').textContent = data.latest.user_name;
+            }
+        })
+        .catch(err => console.error('Load stats error:', err));
+}
+
+function loadTodayLogs() {
+    fetch('/api/logs/today')
+        .then(r => r.json())
+        .then(data => {
+            renderTodayLogs(data.logs);
+        })
+        .catch(err => console.error('Load logs error:', err));
+}
+
+function renderTodayLogs(logs) {
+    const tbody = document.getElementById('today-logs-body');
+    if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">Chưa có dữ liệu</td></tr>';
+        return;
+    }
+
+    function captureUrl(imageName) {
+        if (!imageName) return '';
+        return '/captures/' + encodeURIComponent(imageName);
+    }
+
+    tbody.innerHTML = logs.map((log, i) => `
+        <tr>
+            <td>${i + 1}</td>
+            <td>
+                ${log.image ? `<img src="${captureUrl(log.image)}" alt="face" style="width:48px;height:48px;object-fit:cover;" class="rounded border" />` : '<span class="text-muted">--</span>'}
+            </td>
+            <td><strong>${escapeHtml(log.user_name)}</strong></td>
+            <td><span class="badge bg-secondary">${escapeHtml(log.camera_id || '')}</span></td>
+            <td>${log.time}</td>
+            <td>
+                <span class="badge ${log.similarity >= 0.6 ? 'bg-success' : 'bg-warning'}">
+                    ${(log.similarity * 100).toFixed(1)}%
+                </span>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// Realtime: khi có nhận diện mới
+function bindRealtimeSocketListener() {
+    try {
+        if (!socket || typeof socket.on !== 'function') return false;
+        socket.off && socket.off('new_recognition');
+        socket.on('new_recognition', function(data) {
+            addRealtimeCard(data);
+            loadStats();
+            loadTodayLogs();
+        });
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// dashboard.js sẽ initSocket() sau DOMContentLoaded; nên retry vài lần
+(function retryBindSocket(attemptsLeft) {
+    if (bindRealtimeSocketListener()) return;
+    if (attemptsLeft <= 0) return;
+    setTimeout(function() { retryBindSocket(attemptsLeft - 1); }, 300);
+})(20);
+
+function addRealtimeCard(data) {
+    const feed = document.getElementById('realtime-items');
+    const noDataMsg = document.getElementById('no-data-msg');
+    if (noDataMsg) noDataMsg.remove();
+
+    const card = document.createElement('div');
+    card.className = 'realtime-item border-bottom p-3 fade-in';
+    card.innerHTML = `
+        <div class="d-flex align-items-center">
+            <div class="me-3">
+                <i class="bi bi-person-circle fs-2 text-primary"></i>
+            </div>
+            <div class="flex-grow-1">
+                <strong>${escapeHtml(data.user_name)}</strong>
+                <br>
+                <small class="text-muted">
+                    <i class="bi bi-camera-video"></i> ${escapeHtml(data.camera_id || '')}
+                    &nbsp;|&nbsp;
+                    <i class="bi bi-clock"></i> ${data.time}
+                    &nbsp;|&nbsp;
+                    <span class="badge ${data.similarity >= 0.6 ? 'bg-success' : 'bg-warning'}">
+                        ${(data.similarity * 100).toFixed(1)}%
+                    </span>
+                </small>
+            </div>
+        </div>
+    `;
+
+    feed.prepend(card);
+
+    // Giới hạn 50 items
+    while (feed.children.length > 50) {
+        feed.removeChild(feed.lastChild);
+    }
+}
+</script>
+{% endblock %}

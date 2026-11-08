@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Duyệt ảnh nhân viên{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-images"></i> Yêu cầu ảnh nhân viên gửi</span>
+                <button class="btn btn-outline-light btn-sm" onclick="loadPendingUploads()">
+                    <i class="bi bi-arrow-clockwise"></i> Làm mới
+                </button>
+            </div>
+            <div class="card-body" id="pendingUploadsWrap">
+                Đang tải...
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', loadPendingUploads);
+
+function loadPendingUploads() {
+    fetch('/api/admin/face_uploads/pending')
+        .then(r => r.json())
+        .then(data => {
+            const items = data.requests || [];
+            const wrap = document.getElementById('pendingUploadsWrap');
+            if (!items.length) {
+                wrap.innerHTML = '<div class="text-muted">Không có yêu cầu pending.</div>';
+                return;
+            }
+
+            wrap.innerHTML = items.map(it => {
+                const previews = (it.files || []).map(f => `<img src="/uploads/${escapeHtml(f)}" class="rounded me-2 mb-2" style="width:96px;height:96px;object-fit:cover">`).join('');
+                return `<div class="border rounded p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <strong>#${it.id} - ${escapeHtml(it.user_name || 'N/A')}</strong>
+                            <div class="small text-muted">${it.created_at || '--'} | ${(it.files || []).length} ảnh</div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-success btn-sm" onclick="approveUpload(${it.id})">Duyệt & Tạo vector</button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="rejectUpload(${it.id})">Từ chối</button>
+                        </div>
+                    </div>
+                    <div>${previews || '<span class="text-muted">Không có preview</span>'}</div>
+                </div>`;
+            }).join('');
+        })
+        .catch(err => {
+            console.error(err);
+            document.getElementById('pendingUploadsWrap').innerHTML = '<div class="text-danger">Lỗi tải dữ liệu.</div>';
+        });
+}
+
+function approveUpload(id) {
+    fetch(`/api/admin/face_uploads/${id}/approve`, { method: 'POST' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.status === 'ok') {
+                alert(`Đã duyệt yêu cầu #${id}. Dùng ${result.used_for_embedding || 0} ảnh tạo vector.`);
+                loadPendingUploads();
+                return;
+            }
+            alert(result.error || 'Duyệt thất bại');
+        })
+        .catch(err => alert(String(err)));
+}
+
+function rejectUpload(id) {
+    const note = prompt('Lý do từ chối (tùy chọn):', '') || '';
+    fetch(`/api/admin/face_uploads/${id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: note }),
+    })
+        .then(r => r.json())
+        .then(result => {
+            if (result.status === 'ok') {
+                loadPendingUploads();
+                return;
+            }
+            alert(result.error || 'Từ chối thất bại');
+        })
+        .catch(err => alert(String(err)));
+}
+</script>
+{% endblock %}

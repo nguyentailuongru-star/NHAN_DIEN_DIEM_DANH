@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Đăng ký tài khoản{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-person-plus"></i> Đăng ký tài khoản
+            </div>
+            <div class="card-body">
+                <form method="post" action="/register">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Username</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Mật khẩu</label>
+                            <input type="password" class="form-control" name="password" minlength="6" required>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Họ tên</label>
+                            <input type="text" class="form-control" name="full_name" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Mã nhân viên</label>
+                            <input type="text" class="form-control" name="employee_id">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Phòng ban</label>
+                            <select class="form-select" name="department_id">
+                                <option value="">-- Chưa chọn --</option>
+                                {% for dept in departments %}
+                                    <option value="{{ dept.id }}">{{ dept.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        {% if not admin_exists %}
+                            <div class="col-12">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="register_as_admin" id="registerAsAdmin">
+                                    <label class="form-check-label" for="registerAsAdmin">
+                                        Tạo tài khoản quản trị đầu tiên (admin)
+                                    </label>
+                                </div>
+                                <small class="text-muted">Tùy chọn này chỉ xuất hiện khi hệ thống chưa có admin.</small>
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mt-4 d-grid gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-check-lg"></i> Đăng ký
+                        </button>
+                        <a href="/login" class="btn btn-outline-secondary">Đã có tài khoản? Đăng nhập</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

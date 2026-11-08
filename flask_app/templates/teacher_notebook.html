@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% block title %}Sổ tay giáo viên - Điểm danh AI{% endblock %}
+
+{% block extra_css %}
+<style>
+.attendance-cell {
+    cursor: pointer;
+    user-select: none;
+}
+
+.attendance-cell:hover {
+    background: #eaf3ff;
+}
+
+.attendance-cell.manual-mark {
+    background: #fff4e5;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-journal-check"></i> Sổ tay giáo viên theo lớp</span>
+                <button class="btn btn-success btn-sm" onclick="exportNotebook()">
+                    <i class="bi bi-file-earmark-excel"></i> Xuất Excel
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label mb-1">Lớp (phòng ban)</label>
+                        <select id="departmentSelect" class="form-select"></select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label mb-1">Tháng</label>
+                        <input type="month" id="monthInput" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label mb-1">Môn học</label>
+                        <input type="text" id="subjectInput" class="form-control" placeholder="Ví dụ: Toán">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label mb-1">Số tiết/tháng</label>
+                        <input type="number" id="periodCountInput" class="form-control" min="1" value="0">
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button class="btn btn-primary" onclick="loadNotebookData()">
+                            <i class="bi bi-arrow-clockwise"></i> Tải dữ liệu
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header bg-secondary text-white">
+                <i class="bi bi-pencil-square"></i> Nội dung giảng dạy theo ngày/tiết
+            </div>
+            <div class="card-body border-bottom">
+                <div class="row g-2">
+                    <div class="col-md-4">
+                        <label class="form-label mb-1">Ngày</label>
+                        <input type="date" id="entryDate" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label mb-1">Tiết</label>
+                        <input type="number" id="entryPeriod" class="form-control" min="1" value="1">
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label mb-1">Ghi chú nghỉ học</label>
+                        <input type="text" id="entryNote" class="form-control" placeholder="Lý do, thông báo...">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label mb-1">Nội dung giảng dạy</label>
+                        <textarea id="entryContent" class="form-control" rows="3" placeholder="Nhập nội dung giảng dạy..."></textarea>
+                    </div>
+                    <div class="col-12 d-grid">
+                        <button class="btn btn-outline-primary" onclick="saveEntry()">
+                            <i class="bi bi-save"></i> Lưu nội dung
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Ngày</th>
+                                <th>Tiết</th>
+                                <th>Nội dung</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="entryBody">
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-3">Chưa có dữ liệu</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header bg-primary text-white">
+                <i class="bi bi-table"></i> Bảng chấm công đi học theo ngày
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 75vh;">
+                    <table class="table table-sm table-bordered mb-0" id="attendanceMatrixTable">
+                        <thead id="matrixHead"></thead>
+                        <tbody id="matrixBody">
+                            <tr>
+                                <td class="text-center text-muted py-3">Chọn lớp và tháng để xem dữ liệu</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let notebookEntries = [];
+let matrixLessonDates = [];
+
+function getSelectedDepartmentId() {
+    return document.getElementById('departmentSelect').value;
+}
+
+function getSelectedMonth() {
+    return document.getElementById('monthInput').value;
+}
+
+function loadDepartments() {
+    fetch('/api/departments')
+        .then(r => r.json())
+        .then(data => {
+            const select = document.getElementById('departmentSelect');
+            const departments = data.departments || [];
+            if (!departments.length) {
+                select.innerHTML = '<option value="">-- Chưa có phòng ban --</option>';
+                return;
+            }
+            select.innerHTML = departments.map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('');
+            loadNotebookData();
+        })
+        .catch(err => {
+            console.error('Load departments error:', err);
+            alert('Không tải được danh sách phòng ban');
+        });
+}
+
+function loadNotebookData() {
+    loadEntries();
+    loadAttendanceMatrix();
+}
+
+function loadEntries() {
+    const departmentId = getSelectedDepartmentId();
+    const month = getSelectedMonth();
+    if (!departmentId || !month) return;
+
+    fetch(`/api/teacher-notebook/entries?department_id=${encodeURIComponent(departmentId)}&month=${encodeURIComponent(month)}`)
+        .then(r => r.json())
+        .then(data => {
+            notebookEntries = data.entries || [];
+            renderEntries();
+        })
+        .catch(err => {
+            console.error('Load entries error:', err);
+            alert('Không tải được dữ liệu nội dung giảng dạy');
+        });
+}
+
+function loadAttendanceMatrix() {
+    const departmentId = getSelectedDepartmentId();
+    const month = getSelectedMonth();
+    if (!departmentId || !month) return;
+
+    fetch(`/api/teacher-notebook/attendance-matrix?department_id=${encodeURIComponent(departmentId)}&month=${encodeURIComponent(month)}`)
+        .then(r => r.json())
+        .then(data => renderAttendanceMatrix(data))
+        .catch(err => {
+            console.error('Load matrix error:', err);
+            document.getElementById('matrixHead').innerHTML = '';
+            document.getElementById('matrixBody').innerHTML = '<tr><td class="text-center text-danger py-3">Không tải được bảng chuyên cần</td></tr>';
+        });
+}
+
+function renderEntries() {
+    const body = document.getElementById('entryBody');
+    if (!notebookEntries.length) {
+        body.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">Chưa có dữ liệu</td></tr>';
+        return;
+    }
+
+    body.innerHTML = notebookEntries.map(item => `
+        <tr>
+            <td>${item.lesson_date}</td>
+            <td>${item.period_no}</td>
+            <td>
+                <div><strong>${escapeHtml(item.lesson_content || '')}</strong></div>
+                ${item.note ? `<small class="text-muted">Ghi chú: ${escapeHtml(item.note)}</small>` : ''}
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteEntry(${item.id})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function renderAttendanceMatrix(data) {
+    const lessonDateLabels = data.lesson_date_labels || [];
+    matrixLessonDates = data.lesson_dates || [];
+    const students = data.students || [];
+    const head = document.getElementById('matrixHead');
+    const body = document.getElementById('matrixBody');
+
+    if (!lessonDateLabels.length || !students.length) {
+        head.innerHTML = '';
+        body.innerHTML = '<tr><td class="text-center text-muted py-3">Chưa có ngày học trong tháng. Hãy nhập Nội dung giảng dạy theo ngày/tiết trước.</td></tr>';
+        return;
+    }
+
+    let headHtml = '<tr><th>TT</th><th>Học và tên</th>';
+    headHtml += lessonDateLabels.map(d => `<th class="text-center">${d}</th>`).join('');
+    headHtml += '<th class="text-center">Tổng</th></tr>';
+    head.innerHTML = headHtml;
+
+    body.innerHTML = students.map((s, idx) => `
+        <tr>
+            <td>${idx + 1}</td>
+            <td>${escapeHtml(s.name)}</td>
+            ${s.attendance_marks.map((mark, colIdx) => {
+                const lessonDate = matrixLessonDates[colIdx] || '';
+                const isManual = Array.isArray(s.attendance_manual_flags) ? !!s.attendance_manual_flags[colIdx] : false;
+                const cls = isManual ? 'attendance-cell manual-mark' : 'attendance-cell';
+                return `<td class="text-center ${cls}" title="Bấm để tích/bỏ tích" onclick="toggleAttendanceMark(${s.id}, '${lessonDate}', ${mark ? 'true' : 'false'})">${mark ? '&#10003;' : ''}</td>`;
+            }).join('')}
+            <td class="text-center fw-semibold">${s.total_present}</td>
+        </tr>
+    `).join('');
+}
+
+function toggleAttendanceMark(userId, lessonDate, currentState) {
+    const departmentId = getSelectedDepartmentId();
+    if (!departmentId || !lessonDate) return;
+
+    const nextState = !currentState;
+    fetch('/api/teacher-notebook/attendance-mark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            department_id: Number(departmentId),
+            user_id: Number(userId),
+            lesson_date: lessonDate,
+            is_present: nextState,
+        }),
+    })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) {
+                alert(data.error || 'Không cập nhật được điểm danh');
+                return;
+            }
+            loadAttendanceMatrix();
+        })
+        .catch(err => {
+            console.error('Toggle attendance error:', err);
+            alert('Không cập nhật được điểm danh');
+        });
+}
+
+function saveEntry() {
+    const departmentId = getSelectedDepartmentId();
+    const lessonDate = document.getElementById('entryDate').value;
+    const periodNo = Number(document.getElementById('entryPeriod').value || 0);
+    const lessonContent = document.getElementById('entryContent').value.trim();
+    const note = document.getElementById('entryNote').value.trim();
+
+    if (!departmentId) {
+        alert('Vui lòng chọn lớp');
+        return;
+    }
+    if (!lessonDate || periodNo <= 0 || !lessonContent) {
+        alert('Vui lòng nhập đủ ngày, tiết và nội dung giảng dạy');
+        return;
+    }
+
+    fetch('/api/teacher-notebook/entries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            department_id: Number(departmentId),
+            lesson_date: lessonDate,
+            period_no: periodNo,
+            lesson_content: lessonContent,
+            note: note,
+        }),
+    })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) {
+                alert(data.error || 'Không lưu được nội dung giảng dạy');
+                return;
+            }
+            document.getElementById('entryContent').value = '';
+            document.getElementById('entryNote').value = '';
+            loadNotebookData();
+        })
+        .catch(err => {
+            console.error('Save entry error:', err);
+            alert('Không lưu được nội dung giảng dạy');
+        });
+}
+
+function deleteEntry(entryId) {
+    if (!confirm('Xóa nội dung giảng dạy này?')) return;
+
+    fetch(`/api/teacher-notebook/entries/${entryId}`, { method: 'DELETE' })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+            if (!ok) {
+                alert(data.error || 'Không xóa được dữ liệu');
+                return;
+            }
+            loadNotebookData();
+        })
+        .catch(err => {
+            console.error('Delete entry error:', err);
+            alert('Không xóa được dữ liệu');
+        });
+}
+
+function exportNotebook() {
+    const departmentId = getSelectedDepartmentId();
+    const month = getSelectedMonth();
+    const subject = document.getElementById('subjectInput').value.trim();
+    const periodCount = Number(document.getElementById('periodCountInput').value || 0);
+
+    if (!departmentId || !month) {
+        alert('Vui lòng chọn lớp và tháng trước khi xuất Excel');
+        return;
+    }
+
+    const query = new URLSearchParams({
+        department_id: departmentId,
+        month: month,
+        subject: subject,
+        period_count: String(periodCount),
+    });
+    window.open(`/api/teacher-notebook/export?${query.toString()}`, '_blank');
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+
+    document.getElementById('monthInput').value = `${yyyy}-${mm}`;
+    document.getElementById('entryDate').value = `${yyyy}-${mm}-${dd}`;
+
+    loadDepartments();
+
+    document.getElementById('departmentSelect').addEventListener('change', loadNotebookData);
+    document.getElementById('monthInput').addEventListener('change', loadNotebookData);
+});
+</script>
+{% endblock %}

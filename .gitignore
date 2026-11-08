@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Ảnh / video (dung lượng lớn, sinh ra khi chạy)
+captures/
+ai_service/captures/
+goc_anh/
+video/
+flask_app/video/
+flask_app/uploads/
+
+# Model InsightFace buffalo_l (>100MB, GitHub chặn) – tải lại bằng: python ai_service/download_model.py
+ai_service/models/buffalo_l/
+*.zip
+
+# Runtime
+logs/
+.pids/
+*.log
+database/*.db-wal
+database/*.db-shm
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

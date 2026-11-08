@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Hành vi Qua Video - Điểm danh AI{% endblock %}
+
+{% block content %}
+<div class="row g-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-bounding-box"></i> Đánh giá hành vi từ video (không nhận diện khuôn mặt)</span>
+                <a href="/attention-dashboard" class="btn btn-sm btn-outline-light">
+                    <i class="bi bi-bar-chart-line"></i> Dashboard hành vi lớp
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-lg-4 col-md-6">
+                        <label class="form-label">Chọn video</label>
+                        <select class="form-select" id="behaviorVideoSelect"></select>
+                        <small class="text-muted" id="behaviorVideoRootHint"></small>
+                    </div>
+                    <div class="col-lg-2 col-md-6">
+                        <label class="form-label">Camera ID</label>
+                        <input type="text" class="form-control" id="behaviorCameraId" value="behavior_video">
+                    </div>
+                    <div class="col-lg-2 col-md-4">
+                        <label class="form-label">Lấy 1 ảnh mỗi N frame</label>
+                        <input type="number" min="1" max="120" class="form-control" id="behaviorFrameStep" value="12">
+                    </div>
+                    <div class="col-lg-2 col-md-4">
+                        <label class="form-label">Số ảnh tối đa</label>
+                        <input type="number" min="1" max="300" class="form-control" id="behaviorMaxImages" value="60">
+                    </div>
+                    <div class="col-lg-2 col-md-4 d-grid">
+                        <button class="btn btn-primary" id="btnBehaviorAnalyze" onclick="analyzeBehaviorVideo()">
+                            <i class="bi bi-play-fill"></i> Phân tích
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <span class="badge bg-secondary" id="behaviorStatusBadge">Idle</span>
+                    <small class="text-muted" id="behaviorStatusText"></small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-images"></i> Ảnh khoanh hành vi từ video</span>
+                <span class="badge bg-light text-dark" id="behaviorResultCount">0 ảnh</span>
+            </div>
+            <div class="card-body">
+                <div id="behaviorResultEmpty" class="text-center text-muted py-4">
+                    <i class="bi bi-camera-video-off fs-1"></i>
+                    <p class="mt-2 mb-0">Chưa có ảnh. Chọn video và bấm Phân tích.</p>
+                </div>
+                <div class="row g-3" id="behaviorResultGrid"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadBehaviorVideoList();
+});
+
+function captureUrl(relativePath) {
+    if (!relativePath) return '';
+    const path = String(relativePath)
+        .split('/')
+        .filter(Boolean)
+        .map(s => encodeURIComponent(s))
+        .join('/');
+    return '/captures/' + path;
+}
+
+function setBehaviorStatus(kind, text) {
+    const badge = document.getElementById('behaviorStatusBadge');
+    const statusText = document.getElementById('behaviorStatusText');
+
+    if (kind === 'running') {
+        badge.className = 'badge bg-warning text-dark';
+        badge.textContent = 'Running';
+    } else if (kind === 'ok') {
+        badge.className = 'badge bg-success';
+        badge.textContent = 'Done';
+    } else if (kind === 'error') {
+        badge.className = 'badge bg-danger';
+        badge.textContent = 'Error';
+    } else {
+        badge.className = 'badge bg-secondary';
+        badge.textContent = 'Idle';
+    }
+
+    statusText.textContent = text || '';
+}
+
+function loadBehaviorVideoList() {
+    fetch('/api/videos')
+        .then(r => r.json())
+        .then(data => {
+            const sel = document.getElementById('behaviorVideoSelect');
+            const hint = document.getElementById('behaviorVideoRootHint');
+            const videos = data.videos || [];
+
+            sel.innerHTML = '';
+            if (!videos.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'Không có video trong thư mục video/';
+                sel.appendChild(opt);
+            } else {
+                videos.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.name;
+                    opt.textContent = v.name;
+                    sel.appendChild(opt);
+                });
+            }
+
+            hint.textContent = data.root ? `Đặt video tại: ${data.root}` : '';
+        })
+        .catch(err => {
+            setBehaviorStatus('error', 'Không tải được danh sách video');
+            console.error('Load behavior video list error:', err);
+        });
+}
+
+function analyzeBehaviorVideo() {
+    const video = document.getElementById('behaviorVideoSelect').value;
+    const cameraId = (document.getElementById('behaviorCameraId').value || '').trim() || 'behavior_video';
+    const frameStep = Number(document.getElementById('behaviorFrameStep').value || 12);
+    const maxImages = Number(document.getElementById('behaviorMaxImages').value || 60);
+    const btn = document.getElementById('btnBehaviorAnalyze');
+
+    if (!video) {
+        alert('Vui lòng chọn video trước khi phân tích');
+        return;
+    }
+
+    btn.disabled = true;
+    setBehaviorStatus('running', 'Đang phân tích video, vui lòng chờ...');
+
+    fetch('/api/behavior-video/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            video: video,
+            camera_id: cameraId,
+            frame_step: frameStep,
+            max_images: maxImages,
+            conf: 0.25,
+        }),
+    })
+        .then(async r => {
+            const j = await r.json();
+            return { ok: r.ok, json: j };
+        })
+        .then(({ ok, json }) => {
+            if (!ok) {
+                setBehaviorStatus('error', json.error || 'Phân tích thất bại');
+                return;
+            }
+            renderBehaviorCaptures(json.captures || []);
+            const msg = `Đã tạo ${json.total || 0} ảnh khoanh hành vi từ ${json.frames_sampled || 0} frame mẫu`;
+            setBehaviorStatus('ok', msg);
+        })
+        .catch(err => {
+            setBehaviorStatus('error', 'Không thể kết nối API phân tích hành vi');
+            console.error('Analyze behavior video error:', err);
+        })
+        .finally(() => {
+            btn.disabled = false;
+        });
+}
+
+function formatSec(sec) {
+    if (typeof sec !== 'number' || !isFinite(sec)) return '--';
+    return `${sec.toFixed(2)}s`;
+}
+
+function renderBehaviorCaptures(items) {
+    const empty = document.getElementById('behaviorResultEmpty');
+    const grid = document.getElementById('behaviorResultGrid');
+    const count = document.getElementById('behaviorResultCount');
+
+    if (!items || !items.length) {
+        grid.innerHTML = '';
+        empty.style.display = '';
+        count.textContent = '0 ảnh';
+        return;
+    }
+
+    empty.style.display = 'none';
+    count.textContent = `${items.length} ảnh`;
+
+    grid.innerHTML = items.map((it, idx) => {
+        const label = escapeHtml(it.label || 'Unknown');
+        const conf = typeof it.confidence === 'number' ? (it.confidence * 100).toFixed(1) + '%' : '--';
+        const camera = escapeHtml(it.camera_id || 'behavior_video');
+        const frameIndex = Number(it.frame_index || 0);
+        const tSec = formatSec(it.time_sec);
+        const img = captureUrl(it.image);
+
+        return `
+            <div class="col-xl-3 col-lg-4 col-md-6">
+                <div class="card h-100 shadow-sm">
+                    <img src="${img}" class="card-img-top" alt="behavior-${idx + 1}" style="height:220px;object-fit:cover;" />
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="badge bg-primary">${label}</span>
+                            <span class="badge bg-success">${conf}</span>
+                        </div>
+                        <div class="small text-muted">
+                            <div>Camera: ${camera}</div>
+                            <div>Frame: ${frameIndex}</div>
+                            <div>Thời điểm: ${tSec}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+</script>
+{% endblock %}

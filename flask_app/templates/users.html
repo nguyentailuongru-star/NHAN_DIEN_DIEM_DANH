@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+{% block title %}Quản lý Nhân viên - Điểm danh AI{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-people"></i> Danh sách Nhân viên</span>
+                <div class="d-flex gap-2">
+                    <a class="btn btn-outline-light btn-sm" href="/logs">
+                        <i class="bi bi-clock-history"></i> Danh sách điểm danh
+                    </a>
+                    <button class="btn btn-danger btn-sm" onclick="deleteAllUsers()">
+                        <i class="bi bi-trash3"></i> Xóa toàn bộ nhân viên
+                    </button>
+                    <button class="btn btn-outline-warning btn-sm" onclick="createDepartmentPrompt()">
+                        <i class="bi bi-diagram-3"></i> Thêm phòng ban
+                    </button>
+                    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                        <i class="bi bi-person-plus"></i> Thêm nhân viên
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Ảnh</th>
+                                <th>Tên</th>
+                                <th>Mã NV</th>
+                                <th>Phòng ban</th>
+                                <th>Khuôn mặt</th>
+                                <th>Ngày tạo</th>
+                                <th>Trạng thái</th>
+                                <th>Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-body">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted py-4">Đang tải...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Upload ảnh khuôn mặt -->
+<div class="modal fade" id="uploadFaceModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title"><i class="bi bi-person-bounding-box"></i> Upload ảnh khuôn mặt</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="faceUserId">
+                <div class="mb-2">
+                    <div><strong id="faceUserName">--</strong></div>
+                    <small class="text-muted">Chọn 3–10 ảnh rõ mặt, nhìn thẳng; mỗi ảnh chỉ 1 người.</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Chọn ảnh</label>
+                    <input class="form-control" type="file" id="faceFiles" accept="image/*" multiple>
+                </div>
+                <div class="alert alert-info py-2" id="faceUploadStatus" style="display:none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="uploadFaceImages()">
+                    <i class="bi bi-upload"></i> Tải lên & Tạo khuôn mặt
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Thêm nhân viên -->
+<div class="modal fade" id="addUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-person-plus"></i> Thêm nhân viên mới</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addUserForm">
+                    <div class="mb-3">
+                        <label class="form-label">Họ tên <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="userName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Mã nhân viên</label>
+                        <input type="text" class="form-control" id="userEmployeeId">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Phòng ban</label>
+                        <select class="form-select" id="userDepartmentId">
+                            <option value="">-- Chưa chọn --</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-primary" onclick="addUser()">
+                    <i class="bi bi-check-lg"></i> Lưu
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Sửa nhân viên -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="bi bi-pencil"></i> Sửa thông tin</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editUserForm">
+                    <input type="hidden" id="editUserId">
+                    <div class="mb-3">
+                        <label class="form-label">Họ tên <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="editUserName" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Mã nhân viên</label>
+                        <input type="text" class="form-control" id="editUserEmployeeId">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Phòng ban</label>
+                        <select class="form-select" id="editUserDepartmentId">
+                            <option value="">-- Chưa chọn --</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
+                <button type="button" class="btn btn-warning" onclick="updateUser()">
+                    <i class="bi bi-check-lg"></i> Cập nhật
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let departments = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadDepartments().then(loadUsers);
+});
+
+function loadDepartments() {
+    return fetch('/api/departments')
+        .then(r => r.json())
+        .then(data => {
+            departments = data.departments || [];
+            renderDepartmentOptions('userDepartmentId', null);
+            renderDepartmentOptions('editUserDepartmentId', null);
+        })
+        .catch(err => console.error('Load departments error:', err));
+}
+
+function renderDepartmentOptions(selectId, selectedId) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const selected = selectedId ? Number(selectedId) : null;
+
+    sel.innerHTML = '<option value="">-- Chưa chọn --</option>' + departments.map(d =>
+        `<option value="${d.id}" ${selected === Number(d.id) ? 'selected' : ''}>${escapeHtml(d.name)}</option>`
+    ).join('');
+}
+
+function createDepartmentPrompt() {
+    const name = (prompt('Tên phòng ban mới:') || '').trim();
+    if (!name) return;
+
+    fetch('/api/departments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name }),
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.status === 'ok') {
+            loadDepartments();
+            return;
+        }
+        alert('Lỗi: ' + (result.error || 'Không xác định'));
+    })
+    .catch(err => alert('Lỗi: ' + err));
+}
+
+function loadUsers() {
+    fetch('/api/users')
+        .then(r => r.json())
+        .then(data => {
+            renderUsers(data.users);
+        })
+        .catch(err => console.error('Load users error:', err));
+}
+
+function renderUsers(users) {
+    const tbody = document.getElementById('users-body');
+    if (!users || users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-4">Chưa có nhân viên nào</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = users.map(user => `
+        <tr>
+            <td>${user.id}</td>
+            <td>
+                ${user.avatar
+                    ? `<img src="/uploads/${escapeHtml(user.avatar)}" class="rounded-circle" width="40" height="40">`
+                    : '<i class="bi bi-person-circle fs-4 text-muted"></i>'}
+            </td>
+            <td><strong>${escapeHtml(user.name)}</strong></td>
+            <td>${escapeHtml(user.employee_id || '--')}</td>
+            <td>${escapeHtml(user.department || '--')}</td>
+            <td>
+                    ${user.face_thumbnail
+                        ? `<img src="/uploads/${escapeHtml(user.face_thumbnail)}" class="rounded" width="44" height="44" style="object-fit:cover">`
+                        : `<span class="badge ${user.has_embedding ? 'bg-success' : 'bg-secondary'}">
+                            ${user.has_embedding ? 'Đã có' : 'Chưa có'}
+                          </span>`}
+            </td>
+            <td>${user.created_at || '--'}</td>
+            <td>
+                <span class="badge ${user.is_active ? 'bg-success' : 'bg-danger'}">
+                    ${user.is_active ? 'Hoạt động' : 'Đã xóa'}
+                </span>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary" title="Upload ảnh khuôn mặt" onclick="openFaceModal(${user.id}, '${escapeHtml(user.name)}')">
+                    <i class="bi bi-person-bounding-box"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-warning" onclick="openEditModal(${user.id}, '${escapeHtml(user.name)}', '${escapeHtml(user.employee_id || '')}', ${user.department_id || 'null'})">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteUser(${user.id}, '${escapeHtml(user.name)}')">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openFaceModal(id, name) {
+    document.getElementById('faceUserId').value = id;
+    document.getElementById('faceUserName').textContent = name;
+    document.getElementById('faceFiles').value = '';
+    const st = document.getElementById('faceUploadStatus');
+    st.style.display = 'none';
+    st.textContent = '';
+    new bootstrap.Modal(document.getElementById('uploadFaceModal')).show();
+}
+
+function uploadFaceImages() {
+    const id = document.getElementById('faceUserId').value;
+    const input = document.getElementById('faceFiles');
+    const st = document.getElementById('faceUploadStatus');
+
+    if (!input.files || input.files.length === 0) {
+        alert('Vui lòng chọn ít nhất 1 ảnh!');
+        return;
+    }
+
+    const fd = new FormData();
+    for (const f of input.files) {
+        fd.append('files', f);
+    }
+
+    st.style.display = 'block';
+    st.className = 'alert alert-info py-2';
+    st.textContent = 'Đang upload và tạo embedding...';
+
+    fetch(`/api/users/${id}/face_images`, {
+        method: 'POST',
+        body: fd,
+    })
+    .then(async (r) => {
+        const ct = (r.headers.get('content-type') || '').toLowerCase();
+        const bodyText = await r.text();
+        if (!ct.includes('application/json')) {
+            const preview = bodyText ? bodyText.slice(0, 200) : '';
+            throw new Error(`Server trả về không phải JSON (HTTP ${r.status}). ${preview}`);
+        }
+        const json = JSON.parse(bodyText);
+        return { ok: r.ok, json };
+    })
+    .then(({ ok, json }) => {
+        if (!ok) {
+            st.className = 'alert alert-danger py-2';
+            let msg = 'Lỗi: ' + (json.error || 'Không xác định');
+            if (json.hint) msg += `\nGợi ý: ${json.hint}`;
+            if (json.stats) msg += `\nStats: ${JSON.stringify(json.stats)}`;
+            st.textContent = msg;
+            return;
+        }
+        st.className = 'alert alert-success py-2';
+        st.textContent = `OK! Đã lưu ${json.saved} ảnh, dùng ${json.used_for_embedding} ảnh để tạo khuôn mặt.` + (json.stats ? `\nStats: ${JSON.stringify(json.stats)}` : '');
+        loadUsers();
+    })
+    .catch(err => {
+        st.className = 'alert alert-danger py-2';
+        st.textContent = String(err);
+    });
+}
+
+function addUser() {
+    const name = document.getElementById('userName').value.trim();
+    if (!name) {
+        alert('Vui lòng nhập họ tên!');
+        return;
+    }
+
+    const data = {
+        name: name,
+        employee_id: document.getElementById('userEmployeeId').value.trim() || null,
+        department_id: document.getElementById('userDepartmentId').value || null,
+    };
+
+    fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.status === 'ok') {
+            bootstrap.Modal.getInstance(document.getElementById('addUserModal')).hide();
+            document.getElementById('addUserForm').reset();
+            loadUsers();
+        } else {
+            alert('Lỗi: ' + (result.error || 'Không xác định'));
+        }
+    })
+    .catch(err => alert('Lỗi kết nối: ' + err));
+}
+
+function openEditModal(id, name, employeeId, departmentId) {
+    document.getElementById('editUserId').value = id;
+    document.getElementById('editUserName').value = name;
+    document.getElementById('editUserEmployeeId').value = employeeId;
+    renderDepartmentOptions('editUserDepartmentId', departmentId);
+    new bootstrap.Modal(document.getElementById('editUserModal')).show();
+}
+
+function updateUser() {
+    const id = document.getElementById('editUserId').value;
+    const name = document.getElementById('editUserName').value.trim();
+    if (!name) {
+        alert('Vui lòng nhập họ tên!');
+        return;
+    }
+
+    const data = {
+        name: name,
+        employee_id: document.getElementById('editUserEmployeeId').value.trim() || null,
+        department_id: document.getElementById('editUserDepartmentId').value || null,
+    };
+
+    fetch(`/api/users/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (result.status === 'ok') {
+            bootstrap.Modal.getInstance(document.getElementById('editUserModal')).hide();
+            loadUsers();
+        } else {
+            alert('Lỗi: ' + (result.error || 'Không xác định'));
+        }
+    })
+    .catch(err => alert('Lỗi kết nối: ' + err));
+}
+
+function deleteUser(id, name) {
+    if (!confirm(`Bạn có chắc muốn xóa "${name}"?`)) return;
+
+    fetch(`/api/users/${id}`, { method: 'DELETE' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.status === 'ok') {
+                loadUsers();
+            }
+        })
+        .catch(err => alert('Lỗi: ' + err));
+}
+
+function deleteAllUsers() {
+    const ok = confirm('Bạn có chắc muốn XÓA TOÀN BỘ nhân viên? Hành động này không thể hoàn tác.');
+    if (!ok) return;
+
+    fetch('/api/users/all', { method: 'DELETE' })
+        .then(r => r.json())
+        .then(result => {
+            if (result.status === 'ok') {
+                alert(`Đã xóa ${result.deleted_users || 0} nhân viên.`);
+                loadUsers();
+                return;
+            }
+            alert('Lỗi: ' + (result.error || 'Không xác định'));
+        })
+        .catch(err => alert('Lỗi: ' + err));
+}
+</script>
+{% endblock %}
