@@ -6,9 +6,9 @@ import os
 import requests
 import numpy as np
 from face_analysis_local import FaceAnalysisLocal
+from model_store import ensure_face_model
 
 API_BASE = "http://localhost:5000"
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "buffalo_l")
 MIN_SAMPLES = 5
 MAX_SAMPLES = 20
 BEST_SHARP_SAMPLES = 10
@@ -48,7 +48,7 @@ def register_face(name, employee_id=None, department=None):
 
     # Load model
     print("Đang load model InsightFace...")
-    app = FaceAnalysisLocal(model_dir=MODEL_DIR, ctx_id=0)
+    app = FaceAnalysisLocal(model_dir=ensure_face_model(), ctx_id=0)
     app.prepare(ctx_id=0, det_size=(640, 640))
 
     # Mở webcam

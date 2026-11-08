@@ -12,8 +12,10 @@ video/
 flask_app/video/
 flask_app/uploads/
 
-# Model InsightFace buffalo_l (>100MB, GitHub chặn) – tải lại bằng: python ai_service/download_model.py
+# Model tải được (buffalo_l, yolov8n.pt) cài trên máy tại %LOCALAPPDATA%\NhanDienDiemDanh\models, tự tải khi chạy.
+# Phòng khi copy nhầm vào dự án:
 ai_service/models/buffalo_l/
+yolov8n.pt
 *.zip
 
 # Runtime

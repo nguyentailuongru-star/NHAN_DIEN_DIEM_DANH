@@ -70,6 +70,73 @@ class User(db.Model):
         }
 
 
+class Camera(db.Model):
+    """Camera RTSP do admin cấu hình (thay thế danh sách mặc định trong config)."""
+
+    __tablename__ = "cameras"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(50), unique=True, nullable=False)  # mã camera ghi trong log điểm danh
+    name = db.Column(db.String(100), nullable=False)
+    rtsp_url = db.Column(db.String(500), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def url_parts(self):
+        """Tách URL thành các trường cho form sửa (KHÔNG trả mật khẩu)."""
+        from urllib.parse import urlsplit, unquote
+
+        url = (self.rtsp_url or "").strip()
+        if url.isdigit():
+            return {"kind": "webcam", "webcam_index": int(url)}
+        try:
+            u = urlsplit(url)
+            if u.scheme.lower() != "rtsp":
+                return {"kind": "custom", "host": u.hostname or ""}
+            path = u.path or ""
+            if u.query:
+                path += "?" + u.query
+            return {
+                "kind": "rtsp",
+                "host": u.hostname or "",
+                "port": u.port or 554,
+                "username": unquote(u.username or ""),
+                "has_password": bool(u.password),
+                "path": path,
+            }
+        except ValueError:
+            return {"kind": "custom"}
+
+    def masked_url(self):
+        from urllib.parse import urlsplit
+
+        url = (self.rtsp_url or "").strip()
+        try:
+            u = urlsplit(url)
+            if u.password:
+                netloc = f"{u.username}:••••@{u.hostname}" + (f":{u.port}" if u.port else "")
+                return u._replace(netloc=netloc).geturl()
+        except ValueError:
+            pass
+        return url
+
+    def to_dict(self):
+        parts = self.url_parts()
+        return {
+            "id": self.id,
+            "code": self.code,
+            "name": self.name,
+            "enabled": bool(self.enabled),
+            "sort_order": self.sort_order,
+            "url_masked": self.masked_url(),
+            "host": parts.get("host") or (f"Webcam {parts.get('webcam_index')}" if parts.get("kind") == "webcam" else ""),
+            "parts": parts,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if self.updated_at else None,
+        }
+
+
 class Department(db.Model):
     __tablename__ = "departments"
 

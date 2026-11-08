@@ -11,6 +11,21 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def write_capture_jpg(filepath: str, img: np.ndarray) -> bool:
+    """Lưu ảnh vào captures/: thu nhỏ cạnh dài về CAPTURE_MAX_SIDE và nén JPEG để tiết kiệm dung lượng."""
+    try:
+        from config import CAPTURE_JPEG_QUALITY, CAPTURE_MAX_SIDE
+    except Exception:
+        CAPTURE_MAX_SIDE, CAPTURE_JPEG_QUALITY = 640, 80
+
+    h, w = img.shape[:2]
+    longest = max(h, w)
+    if CAPTURE_MAX_SIDE and longest > CAPTURE_MAX_SIDE:
+        scale = float(CAPTURE_MAX_SIDE) / float(longest)
+        img = cv2.resize(img, (max(1, int(w * scale)), max(1, int(h * scale))), interpolation=cv2.INTER_AREA)
+    return bool(cv2.imwrite(filepath, img, [int(cv2.IMWRITE_JPEG_QUALITY), int(CAPTURE_JPEG_QUALITY)]))
+
+
 class StudentBehaviorModel:
     """Classify classroom behavior from a crop around a recognized student."""
 
@@ -231,7 +246,7 @@ class StudentBehaviorModel:
             
             filename = f"{camera_id}_{uid}_behavior_{safe_label}_{timestamp}.jpg"
             filepath = os.path.join(CAPTURE_DIR, filename)
-            cv2.imwrite(filepath, crop)
+            write_capture_jpg(filepath, crop)
             return filename
         except Exception:
             return None

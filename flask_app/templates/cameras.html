@@ -1,0 +1,392 @@
+{% extends "base.html" %}
+{% block title %}Cấu hình camera - Điểm danh AI{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div>
+        <h2>Cấu hình camera</h2>
+        <p>Thêm, sửa luồng RTSP của camera. Thay đổi được AI service áp dụng ngay, không cần khởi động lại hệ thống.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-light border" onclick="resetDefaults()"><i class="bi bi-arrow-counterclockwise"></i> Khôi phục mặc định</button>
+        <button class="btn btn-primary" onclick="openForm()"><i class="bi bi-plus-lg"></i> Thêm camera</button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead>
+                <tr>
+                    <th>Camera</th>
+                    <th>Mã</th>
+                    <th>Luồng RTSP</th>
+                    <th>Trạng thái AI</th>
+                    <th class="text-center">Bật</th>
+                    <th class="text-end">Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="cam-rows">
+                <tr><td colspan="6" class="empty-state">Đang tải...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+<p class="text-muted small mt-3 mb-0">
+    <i class="bi bi-shield-lock"></i> Mật khẩu camera không bao giờ hiển thị lại trên trang. Khi sửa, để trống ô mật khẩu để giữ mật khẩu cũ.
+    &nbsp;•&nbsp; <b>Mã camera</b> được ghi vào lịch sử điểm danh (cột Camera).
+</p>
+
+<!-- Form thêm / sửa -->
+<div class="modal fade" id="camModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="camModalTitle">Thêm camera</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-danger d-none" id="formError"></div>
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="form-label">Tên camera</label>
+                        <input class="form-control" id="f-name" placeholder="VD: Camera cửa lớp A1">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Mã camera</label>
+                        <input class="form-control" id="f-code" placeholder="VD: A1-01">
+                    </div>
+                </div>
+
+                <ul class="nav nav-pills nav-sm mt-4 mb-3" id="modeTabs">
+                    <li class="nav-item"><button class="nav-link active" data-mode="fields" type="button">Nhập theo IP</button></li>
+                    <li class="nav-item"><button class="nav-link" data-mode="url" type="button">URL đầy đủ</button></li>
+                    <li class="nav-item"><button class="nav-link" data-mode="webcam" type="button">Webcam máy tính</button></li>
+                </ul>
+
+                <div data-pane="fields">
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label class="form-label">Địa chỉ IP camera</label>
+                            <input class="form-control" id="f-host" placeholder="192.168.1.54">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Cổng RTSP</label>
+                            <input class="form-control" id="f-port" type="number" value="554" min="1" max="65535">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Tài khoản</label>
+                            <input class="form-control" id="f-user" placeholder="admin" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Mật khẩu</label>
+                            <input class="form-control" id="f-pass" type="password" autocomplete="new-password">
+                            <div class="form-text d-none" id="passHint">Để trống = giữ mật khẩu đang lưu.</div>
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Hãng camera</label>
+                            <select class="form-select" id="f-brand">
+                                <option value="/cam/realmonitor?channel=1&subtype=0">Dahua / KBVision / Imou (luồng chính)</option>
+                                <option value="/cam/realmonitor?channel=1&subtype=1">Dahua / KBVision / Imou (luồng phụ - nhẹ)</option>
+                                <option value="/Streaming/Channels/101">Hikvision / HiLook (luồng chính)</option>
+                                <option value="/Streaming/Channels/102">Hikvision / HiLook (luồng phụ - nhẹ)</option>
+                                <option value="/onvif1">Yoosee / ONVIF</option>
+                                <option value="/live/ch00_0">Ezviz / camera giá rẻ (ch00_0)</option>
+                                <option value="/h264_stream">EseeCloud / Vitacam</option>
+                                <option value="">Khác (tự nhập đường dẫn)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-7">
+                            <label class="form-label">Đường dẫn luồng</label>
+                            <input class="form-control" id="f-path" placeholder="/cam/realmonitor?channel=1&subtype=0">
+                        </div>
+                    </div>
+                    <div class="url-preview mt-3"><i class="bi bi-link-45deg"></i> <span id="urlPreview"></span></div>
+                </div>
+
+                <div data-pane="url" class="d-none">
+                    <label class="form-label">URL luồng camera</label>
+                    <input class="form-control" id="f-url" placeholder="rtsp://user:matkhau@192.168.1.54:554/...">
+                    <div class="form-text" id="urlHint">Hỗ trợ rtsp://, http:// (MJPEG) hoặc đường dẫn file video.</div>
+                </div>
+
+                <div data-pane="webcam" class="d-none">
+                    <label class="form-label">Số thứ tự webcam</label>
+                    <input class="form-control" id="f-webcam" type="number" value="0" min="0" max="10" style="max-width:140px">
+                    <div class="form-text">0 = webcam mặc định của máy chạy hệ thống.</div>
+                </div>
+
+                <div class="form-check form-switch mt-4">
+                    <input class="form-check-input" type="checkbox" id="f-enabled" checked>
+                    <label class="form-check-label" for="f-enabled">Bật camera (hiện trên dashboard và AI nhận diện)</label>
+                </div>
+
+                <div class="test-box mt-3 d-none" id="testBox"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-light border me-auto" id="btnTest" onclick="testForm()"><i class="bi bi-plug"></i> Kiểm tra kết nối</button>
+                <button class="btn btn-light border" data-bs-dismiss="modal">Hủy</button>
+                <button class="btn btn-primary" id="btnSave" onclick="saveForm()"><i class="bi bi-check-lg"></i> Lưu</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Kết quả kiểm tra từ bảng -->
+<div class="modal fade" id="testModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Kiểm tra kết nối</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body"><div class="test-box" id="testModalBody"></div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .nav-pills .nav-link { padding: 6px 14px; font-size: .85rem; color: var(--muted); border-radius: 8px; }
+    .nav-pills .nav-link.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+    .url-preview { background: var(--surface-2); border: 1px dashed var(--border); border-radius: 8px; padding: 8px 12px; font-family: Consolas, monospace; font-size: .8rem; color: var(--muted); word-break: break-all; }
+    .test-box { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--surface-2); }
+    .test-box.ok { border-color: #bbf7d0; background: var(--success-soft); }
+    .test-box.err { border-color: #fecaca; background: var(--danger-soft); color: var(--danger); }
+    .test-box img { max-width: 100%; border-radius: 8px; margin-top: 10px; display: block; }
+    .cam-url { font-family: Consolas, monospace; font-size: .78rem; color: var(--muted); max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .st { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; }
+    .st.ok { color: var(--success); } .st.err { color: var(--danger); font-weight: 600; } .st.warn { color: var(--warning); } .st.muted { color: var(--muted); }
+    .st::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    tr.row-off td { opacity: .55; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let cameras = [];
+let editingId = null;
+let mode = 'fields';
+const modal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('camModal'));
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadCameras();
+    setInterval(loadStatus, 3000);
+    document.querySelectorAll('#modeTabs .nav-link').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+    document.getElementById('f-brand').addEventListener('change', e => {
+        if (e.target.value) document.getElementById('f-path').value = e.target.value;
+        updatePreview();
+    });
+    ['f-host', 'f-port', 'f-user', 'f-pass', 'f-path'].forEach(id => document.getElementById(id).addEventListener('input', updatePreview));
+});
+
+function api(url, opts) {
+    return fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts || {}))
+        .then(r => r.json().then(d => ({ ok: r.ok, data: d })));
+}
+
+/* ---------- Danh sách ---------- */
+function loadCameras() {
+    api('/api/cameras').then(({ data }) => {
+        cameras = data.cameras || [];
+        renderRows();
+        loadStatus();
+    });
+}
+
+function renderRows(statusById) {
+    const tb = document.getElementById('cam-rows');
+    if (!cameras.length) {
+        tb.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i class="bi bi-camera-video-off"></i>Chưa có camera. Bấm "Thêm camera" hoặc "Khôi phục mặc định".</div></td></tr>';
+        return;
+    }
+    tb.innerHTML = cameras.map(c => {
+        const st = (statusById || {})[c.id];
+        return `
+        <tr class="${c.enabled ? '' : 'row-off'}">
+            <td><div class="fw-semibold">${escapeHtml(c.name)}</div><div class="small text-muted"><i class="bi bi-hdd-network"></i> ${escapeHtml(c.host || '')}</div></td>
+            <td><span class="badge bg-light text-dark border">${escapeHtml(c.code)}</span></td>
+            <td><div class="cam-url" title="${escapeHtml(c.url_masked)}">${escapeHtml(c.url_masked)}</div></td>
+            <td data-status-cell="${c.id}">${statusHtml(st)}</td>
+            <td class="text-center">
+                <div class="form-check form-switch d-inline-block m-0">
+                    <input class="form-check-input" type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleEnabled(${c.id}, this.checked)">
+                </div>
+            </td>
+            <td class="text-end text-nowrap">
+                <button class="btn btn-sm btn-light border" title="Kiểm tra kết nối" onclick="testSaved(${c.id})"><i class="bi bi-plug"></i></button>
+                <button class="btn btn-sm btn-light border" title="Khởi động lại" onclick="restartCam(${c.id})"><i class="bi bi-arrow-clockwise"></i></button>
+                <button class="btn btn-sm btn-light border" title="Sửa" onclick="openForm(${c.id})"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-light border text-danger" title="Xóa" onclick="deleteCam(${c.id})"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function statusHtml(st) {
+    if (!st) return '<span class="st muted">—</span>';
+    const ai = st.ai || {};
+    const map = { online: ['ok', 'Đang nhận diện'], connecting: ['warn', ai.message || 'Đang kết nối'], error: ['err', ai.message || 'Lỗi'],
+                  offline: ['muted', 'AI service chưa chạy'], disabled: ['muted', 'Đang tắt'] };
+    const [tone, text] = map[ai.state] || ['muted', ai.message || '—'];
+    return `<span class="st ${tone}" title="${escapeHtml(ai.message || '')}">${escapeHtml(text)}</span>`;
+}
+
+function loadStatus() {
+    api('/api/cameras/status').then(({ ok, data }) => {
+        if (!ok) return;
+        (data.cameras || []).forEach(s => {
+            const cell = document.querySelector('[data-status-cell="' + s.id + '"]');
+            if (cell) cell.innerHTML = statusHtml(s);
+        });
+    });
+}
+
+function toggleEnabled(id, enabled) {
+    const c = cameras.find(x => x.id === id);
+    const body = { name: c.name, code: c.code, enabled, mode: 'keep' };  // giữ nguyên luồng
+    api('/api/cameras/' + id, { method: 'PUT', body: JSON.stringify(body) }).then(({ ok, data }) => {
+        if (!ok) alert(data.error || 'Lỗi');
+        loadCameras();
+    });
+}
+
+function restartCam(id) {
+    api('/api/cameras/' + id + '/restart', { method: 'POST' }).then(() => setTimeout(loadStatus, 800));
+}
+
+function deleteCam(id) {
+    const c = cameras.find(x => x.id === id);
+    if (!confirm('Xóa camera "' + c.name + '"? AI sẽ ngừng nhận diện trên camera này.')) return;
+    api('/api/cameras/' + id, { method: 'DELETE' }).then(loadCameras);
+}
+
+function resetDefaults() {
+    if (!confirm('Xóa toàn bộ cấu hình camera trên web và quay về danh sách mặc định của hệ thống?')) return;
+    api('/api/cameras/reset-defaults', { method: 'POST' }).then(loadCameras);
+}
+
+/* ---------- Form ---------- */
+function setMode(m) {
+    mode = m;
+    document.querySelectorAll('#modeTabs .nav-link').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    document.querySelectorAll('[data-pane]').forEach(p => p.classList.toggle('d-none', p.dataset.pane !== m));
+}
+
+function openForm(id) {
+    editingId = id || null;
+    const c = cameras.find(x => x.id === id);
+    document.getElementById('camModalTitle').textContent = c ? 'Sửa camera: ' + c.name : 'Thêm camera';
+    document.getElementById('formError').classList.add('d-none');
+    document.getElementById('testBox').classList.add('d-none');
+    const p = (c && c.parts) || {};
+    document.getElementById('f-name').value = c ? c.name : '';
+    document.getElementById('f-code').value = c ? c.code : '';
+    document.getElementById('f-host').value = p.host || '';
+    document.getElementById('f-port').value = p.port || 554;
+    document.getElementById('f-user').value = c ? (p.username || '') : 'admin';
+    document.getElementById('f-pass').value = '';
+    document.getElementById('f-pass').placeholder = p.has_password ? '•••••••• (đang lưu)' : '';
+    document.getElementById('passHint').classList.toggle('d-none', !p.has_password);
+    const path = c ? (p.path || '') : '/cam/realmonitor?channel=1&subtype=0';
+    document.getElementById('f-path').value = path;
+    const brand = document.getElementById('f-brand');
+    brand.value = [...brand.options].some(o => o.value === path) ? path : '';
+    document.getElementById('f-url').value = '';
+    document.getElementById('f-url').placeholder = c && p.kind !== 'rtsp' && p.kind !== 'webcam' ? c.url_masked : 'rtsp://user:matkhau@192.168.1.54:554/...';
+    document.getElementById('f-webcam').value = p.webcam_index || 0;
+    document.getElementById('f-enabled').checked = c ? c.enabled : true;
+    setMode(p.kind === 'webcam' ? 'webcam' : (c && p.kind !== 'rtsp' ? 'url' : 'fields'));
+    updatePreview();
+    modal().show();
+}
+
+function formBody() {
+    const body = {
+        name: document.getElementById('f-name').value.trim(),
+        code: document.getElementById('f-code').value.trim(),
+        enabled: document.getElementById('f-enabled').checked,
+        mode,
+    };
+    if (mode === 'fields') Object.assign(body, {
+        host: document.getElementById('f-host').value.trim(),
+        port: document.getElementById('f-port').value,
+        username: document.getElementById('f-user').value.trim(),
+        password: document.getElementById('f-pass').value,
+        path: document.getElementById('f-path').value.trim(),
+    });
+    if (mode === 'url') body.rtsp_url = document.getElementById('f-url').value.trim();
+    if (mode === 'webcam') body.webcam_index = document.getElementById('f-webcam').value;
+    if (editingId) body.id = editingId;
+    return body;
+}
+
+function updatePreview() {
+    const host = document.getElementById('f-host').value.trim() || '<IP>';
+    const port = document.getElementById('f-port').value || 554;
+    const user = document.getElementById('f-user').value.trim();
+    const hasPass = document.getElementById('f-pass').value || document.getElementById('f-pass').placeholder;
+    let path = document.getElementById('f-path').value.trim();
+    if (path && !path.startsWith('/')) path = '/' + path;
+    const auth = user ? user + (hasPass ? ':••••' : '') + '@' : '';
+    document.getElementById('urlPreview').textContent = 'rtsp://' + auth + host + ':' + port + path;
+}
+
+function showFormError(msg) {
+    const el = document.getElementById('formError');
+    el.textContent = msg;
+    el.classList.remove('d-none');
+}
+
+function saveForm() {
+    const body = formBody();
+    if (mode === 'url' && !body.rtsp_url && editingId) body.mode = 'keep';  // sửa mà không nhập URL mới → giữ URL cũ
+    const btn = document.getElementById('btnSave');
+    btn.disabled = true;
+    api(editingId ? '/api/cameras/' + editingId : '/api/cameras', { method: editingId ? 'PUT' : 'POST', body: JSON.stringify(body) })
+        .then(({ ok, data }) => {
+            if (!ok) return showFormError(data.error || 'Không lưu được');
+            modal().hide();
+            loadCameras();
+        })
+        .finally(() => { btn.disabled = false; });
+}
+
+function renderTest(box, res) {
+    box.classList.remove('d-none', 'ok', 'err');
+    if (res.ok) {
+        box.classList.add('ok');
+        box.innerHTML = `<div><i class="bi bi-check-circle-fill text-success"></i> <b>Kết nối thành công</b> · ${res.resolution} · ${(res.elapsed_ms / 1000).toFixed(1)} giây</div>`
+            + (res.snapshot ? `<img src="${res.snapshot}" alt="Ảnh chụp thử">` : '');
+    } else {
+        box.classList.add('err');
+        box.innerHTML = `<i class="bi bi-x-circle-fill"></i> <b>Không kết nối được.</b> ${escapeHtml(res.error || '')}`;
+    }
+}
+
+function testForm() {
+    const box = document.getElementById('testBox');
+    const btn = document.getElementById('btnTest');
+    box.classList.remove('d-none', 'ok', 'err');
+    box.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang kết nối thử (tối đa ~10 giây)...';
+    btn.disabled = true;
+    const body = formBody();
+    if (mode === 'url' && !body.rtsp_url) body.mode = 'keep';  // dùng URL đang lưu
+    api('/api/cameras/test', { method: 'POST', body: JSON.stringify(body) })
+        .then(({ data }) => renderTest(box, data))
+        .catch(() => renderTest(box, { ok: false, error: 'Lỗi máy chủ' }))
+        .finally(() => { btn.disabled = false; });
+}
+
+function testSaved(id) {
+    const box = document.getElementById('testModalBody');
+    box.className = 'test-box';
+    box.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang kết nối thử (tối đa ~10 giây)...';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('testModal')).show();
+    api('/api/cameras/test', { method: 'POST', body: JSON.stringify({ id }) })
+        .then(({ data }) => renderTest(box, data))
+        .catch(() => renderTest(box, { ok: false, error: 'Lỗi máy chủ' }));
+}
+</script>
+{% endblock %}

@@ -193,17 +193,26 @@ AI Service sẽ lấy mẫu frame theo `FRAME_INTERVAL` để giảm tải, nh�
 - `0.5–0.6`: chuẩn (khuyến nghị)
 - `RECOGNITION_COOLDOWN = 60` — số giây giữa 2 lần điểm danh cùng 1 người
 
-# COPY MÁY KHÁC
+# CÀI ĐẶT TRÊN MÁY KHÁC (clone từ GitHub)
 
-Có, copy được toàn bộ project để làm tiếp.
-Khuyến nghị không copy .venv giữa 2 máy khác cấu hình, vì thường không ổn định (đặc biệt với CUDA/driver).
-Nên copy source + models + database backup, rồi trên máy mới cài lại thư viện bằng requirements.
-Checklist khi sang máy mới
+```bash
+git clone https://github.com/nguyentailuongru-star/NHAN_DIEN_DIEM_DANH.git
+cd NHAN_DIEN_DIEM_DANH
+python -m pip install -r ai_service/requirements.txt -r flask_app/requirements.txt
+```
+Sau đó bấm đúp `KHOI_DONG.bat`.
 
-Copy project + model:
-buffalo_l
-Tạo môi trường và cài libs:
-python -m venv .venv
-.python.exe -m pip install -r ai_service/requirements.txt
-.python.exe -m pip install -r flask_app/requirements.txt
-DB:
+**Model AI không nằm trong dự án** mà được cài vào máy tại
+`%LOCALAPPDATA%\NhanDienDiemDanh\models` (đổi bằng biến môi trường `AI_MODEL_HOME`):
+
+| Model | Dung lượng | Nguồn |
+|---|---|---|
+| `buffalo_l/det_10g.onnx` – tìm khuôn mặt (SCRFD) | 17 MB | GitHub InsightFace (tự tải) |
+| `buffalo_l/w600k_r50.onnx` – nhận diện (ArcFace) | 174 MB | GitHub InsightFace (tự tải) |
+| `yolov8n.pt` – bám theo người | 6 MB | Ultralytics (tự tải) |
+| `ai_service/models/student_behavior_best.pt` – hành vi | 22 MB | Model tự train, **nằm trong repo** |
+
+Lần chạy đầu tiên hệ thống tự tải các model còn thiếu (cần Internet, ~280 MB, chỉ tải 1 lần cho mỗi máy).
+Muốn tải trước: `python ai_service/download_model.py`.
+
+Database `database/diem_danh.db` đi kèm repo; ảnh trong `captures/`, `flask_app/uploads/` không đi kèm.

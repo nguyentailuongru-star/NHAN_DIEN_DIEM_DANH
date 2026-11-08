@@ -15,6 +15,9 @@ from config import (
     CAMERAS,
     API_RECOGNITION_URL,
     API_ATTENTION_URL,
+    API_CAMERA_SYNC_URL,
+    CAMERA_CONNECT_ATTEMPTS,
+    CAMERA_RETRY_DELAY_SEC,
     BEHAVIOR_MODEL_FILENAME,
     BEHAVIOR_CLASS_NAMES,
     FACE_MODEL_NAME,
@@ -33,6 +36,8 @@ from config import (
     VIDEO_PROCESS_MAX_HEIGHT,
     RECOGNITION_COOLDOWN,
     BEHAVIOR_POST_INTERVAL,
+    BEHAVIOR_SAVE_IMAGES,
+    BEHAVIOR_CAPTURE_INTERVAL,
     CAPTURE_DIR,
     RTSP_TRANSPORT,
     RTSP_OPEN_TIMEOUT_MS,
@@ -51,7 +56,8 @@ from config import (
 )
 from face_manager import FaceManager
 from face_analysis_local import FaceAnalysisLocal
-from behavior import StudentBehaviorModel
+from model_store import ensure_face_model, ensure_yolo_weights
+from behavior import StudentBehaviorModel, write_capture_jpg
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,6 +82,12 @@ class AIService:
         self.last_seen = {}
         # Theo dõi tần suất gửi hành vi: {(camera_id, user_id): last_send_ts}
         self.last_behavior_sent = {}
+        # Lần lưu ảnh hành vi gần nhất: {(camera_id, user_id): ts} → giới hạn số ảnh trong captures/
+        self.last_behavior_capture = {}
+        # Camera: {code: worker}, {code: {state, message, since}}
+        self._cam_lock = threading.Lock()
+        self.camera_workers = {}
+        self.camera_status = {}
         # Theo dõi track theo camera: {(camera_id, track_id): state}
         self.track_states = {}
         self.running = False
@@ -92,7 +104,7 @@ class AIService:
 
     def init_model(self):
         """Khởi tạo InsightFace model."""
-        model_dir = os.path.join(MODEL_ROOT, FACE_MODEL_NAME)
+        model_dir = ensure_face_model()  # model cài trên máy, tự tải nếu chưa có
         logger.info("Đang load model InsightFace: %s (GPU: %d)", model_dir, GPU_ID)
         self.face_app = FaceAnalysisLocal(model_dir=model_dir, ctx_id=GPU_ID)
         if self.mode == "video":
@@ -115,11 +127,7 @@ class AIService:
         try:
             from ultralytics import YOLO  # type: ignore[import-not-found]
 
-            model_path = PERSON_DETECT_MODEL_FILENAME
-            local_model_path = os.path.join(MODEL_ROOT, PERSON_DETECT_MODEL_FILENAME)
-            if os.path.isfile(local_model_path):
-                model_path = local_model_path
-
+            model_path = ensure_yolo_weights(PERSON_DETECT_MODEL_FILENAME)
             self.person_model = YOLO(model_path)
             logger.info(
                 "Loaded person detector for tracking: %s (tracker=%s)",
@@ -154,6 +162,19 @@ class AIService:
         self.last_behavior_sent[key] = now
         return True
 
+    def _take_behavior_capture_slot(self, camera_id, user_id):
+        """True nếu được phép lưu 1 ảnh hành vi cho người này (tối đa 1 ảnh / BEHAVIOR_CAPTURE_INTERVAL)."""
+        if not BEHAVIOR_SAVE_IMAGES:
+            return False
+        if not hasattr(self, "last_behavior_capture"):
+            self.last_behavior_capture = {}
+        key = (str(camera_id), int(user_id))
+        now = time.time()
+        if (now - self.last_behavior_capture.get(key, 0.0)) < float(BEHAVIOR_CAPTURE_INTERVAL):
+            return False
+        self.last_behavior_capture[key] = now
+        return True
+
     def _save_capture(self, frame, camera_id, user_id):
         """Lưu ảnh capture khi nhận diện thành công.
 
@@ -163,7 +184,7 @@ class AIService:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"{camera_id}_{int(user_id) if user_id is not None else 'unknown'}_{timestamp}.jpg"
         filepath = os.path.join(CAPTURE_DIR, filename)
-        cv2.imwrite(filepath, frame)
+        write_capture_jpg(filepath, frame)
         return filename
 
     def _save_face_capture(self, frame, detect_img, bbox, camera_id, user_id, margin: float = 0.25):
@@ -207,7 +228,7 @@ class AIService:
 
             filename = f"{camera_id}_{uid}_face_{timestamp}.jpg"
             filepath = os.path.join(CAPTURE_DIR, filename)
-            cv2.imwrite(filepath, crop)
+            write_capture_jpg(filepath, crop)
             return filename
         except Exception:
             # Fallback: nếu crop lỗi thì lưu full frame
@@ -517,7 +538,9 @@ class AIService:
                     bbox=face.bbox,
                 )
                 if behavior_result and self._can_send_behavior(camera_id, match["user_id"]):
-                    crop = self.behavior_model._crop_behavior_region(frame=frame, detect_img=detect_img, bbox=face.bbox)
+                    crop = None
+                    if self._take_behavior_capture_slot(camera_id, match["user_id"]):
+                        crop = self.behavior_model._crop_behavior_region(frame=frame, detect_img=detect_img, bbox=face.bbox)
                     if crop is not None:
                         image_file = self.behavior_model.save_behavior_crop(
                             crop=crop,
@@ -612,20 +635,20 @@ class AIService:
                 person_bbox=tinfo["bbox"],
             )
             if behavior_result is not None:
-                crop = self.behavior_model._crop_person_region(frame=frame, detect_img=detect_img, person_bbox=tinfo["bbox"])
-                if crop is not None:
-                    image_file = self.behavior_model.save_behavior_crop(
-                        crop=crop,
-                        camera_id=camera_id,
-                        user_id=state["user_id"],
-                        label=behavior_result.get("behavior_label", "unknown"),
-                    )
-                    if image_file:
-                        behavior_result["image_file"] = image_file
                 state["behavior_history"].append(behavior_result)
 
             smoothed = self._aggregate_track_behavior(state)
             if smoothed and self._can_send_behavior(camera_id, state["user_id"]):
+                smoothed["image_file"] = None
+                if self._take_behavior_capture_slot(camera_id, state["user_id"]):
+                    crop = self.behavior_model._crop_person_region(frame=frame, detect_img=detect_img, person_bbox=tinfo["bbox"])
+                    if crop is not None:
+                        smoothed["image_file"] = self.behavior_model.save_behavior_crop(
+                            crop=crop,
+                            camera_id=camera_id,
+                            user_id=state["user_id"],
+                            label=smoothed.get("behavior_label", "unknown"),
+                        )
                 threading.Thread(
                     target=self._send_behavior_to_api,
                     args=(state["user_id"], state.get("user_name") or "Unknown", camera_id, smoothed),
@@ -662,72 +685,185 @@ class AIService:
                 len([1 for (cam, _) in self.track_states.keys() if str(cam) == str(camera_id)]),
             )
 
-    def stream_camera(self, camera_config):
-        """Đọc stream từ 1 camera RTSP và xử lý."""
-        camera_id = camera_config["id"]
-        camera_name = camera_config["name"]
-        rtsp_url = camera_config["rtsp_url"]
+    # ================================================================ camera manager
+    # Danh sách camera do admin cấu hình trên web (Flask /api/cameras/ai-sync).
+    # Mỗi camera chạy 1 thread. Lỗi kết nối: thử tối đa CAMERA_CONNECT_ATTEMPTS lần rồi DỪNG HẲN,
+    # báo trạng thái "error" (dashboard hiện đỏ) và chờ admin bấm "Khởi động lại camera".
 
-        logger.info("Bắt đầu stream camera: %s (%s)", camera_name, camera_id)
+    def _set_cam_status(self, code, state, message=""):
+        with self._cam_lock:
+            cur = self.camera_status.setdefault(code, {"code": code})
+            if cur.get("state") == state and cur.get("message") == message:
+                return
+            cur.update(state=state, message=message, since=datetime.now().strftime("%H:%M:%S %d/%m/%Y"))
+        if state == "error":
+            logger.error("[camera %s] DỪNG: %s (chờ admin bấm 'Khởi động lại camera')", code, message)
 
-        # Tối ưu FFmpeg backend cho RTSP (áp dụng theo process)
-        # Format: key;value|key;value ... (OpenCV)
-        # stimeout tính theo microseconds
+    def _start_camera_worker(self, cam):
+        code = str(cam["code"])
+        worker = {
+            "cfg": dict(cam),
+            "stop": threading.Event(),
+            "restart": threading.Event(),
+        }
+        worker["thread"] = threading.Thread(target=self.stream_camera, args=(worker,), daemon=True, name=f"cam-{code}")
+        with self._cam_lock:
+            self.camera_workers[code] = worker
+        worker["thread"].start()
+
+    def _restart_camera(self, code):
+        with self._cam_lock:
+            worker = self.camera_workers.get(code)
+        if worker is None:
+            return
+        logger.info("[camera %s] Admin yêu cầu khởi động lại", code)
+        if worker["thread"].is_alive():
+            worker["restart"].set()
+        else:
+            self._start_camera_worker(worker["cfg"])
+
+    def _apply_camera_list(self, cameras):
+        """Đồng bộ thread camera với danh sách admin cấu hình (thêm / bỏ / đổi URL)."""
+        desired = {str(c["code"]): c for c in cameras if c.get("code") and c.get("rtsp_url")}
+        with self._cam_lock:
+            current = dict(self.camera_workers)
+        for code, worker in current.items():
+            if code not in desired:
+                logger.info("[camera %s] Đã bị xóa/tắt trên web → dừng", code)
+                worker["stop"].set()
+                with self._cam_lock:
+                    self.camera_workers.pop(code, None)
+                    self.camera_status.pop(code, None)
+        for code, cam in desired.items():
+            worker = current.get(code)
+            if worker is None:
+                logger.info("[camera %s] Thêm camera: %s", code, cam.get("name"))
+                self._start_camera_worker(cam)
+            elif worker["cfg"].get("rtsp_url") != cam["rtsp_url"] or worker["cfg"].get("name") != cam.get("name"):
+                logger.info("[camera %s] Cấu hình thay đổi → kết nối lại", code)
+                worker["cfg"] = dict(cam)
+                if worker["thread"].is_alive():
+                    worker["restart"].set()
+                else:
+                    self._start_camera_worker(cam)
+
+    def _sync_with_server(self):
+        """Báo trạng thái camera, nhận danh sách camera + lệnh khởi động lại. Trả về True nếu OK."""
+        with self._cam_lock:
+            statuses = [dict(v) for v in self.camera_status.values()]
         try:
-            timeout_ms = max(int(RTSP_OPEN_TIMEOUT_MS), int(RTSP_READ_TIMEOUT_MS))
-            stimeout_us = timeout_ms * 1000
+            resp = requests.post(API_CAMERA_SYNC_URL, json={"cameras": statuses}, timeout=3)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            if not getattr(self, "_sync_warned", False):
+                logger.warning("Chưa đồng bộ được cấu hình camera với Flask: %s", e)
+                self._sync_warned = True
+            return False
+        self._sync_warned = False
+        self._apply_camera_list(data.get("cameras") or [])
+        for code in data.get("restart") or []:
+            self._restart_camera(str(code))
+        return True
+
+    def stream_camera(self, worker):
+        """Đọc stream từ 1 camera RTSP và xử lý (chạy trong thread riêng)."""
+        cfg = worker["cfg"]
+        code = str(cfg["code"])
+        stop, restart = worker["stop"], worker["restart"]
+
+        # Tối ưu FFmpeg backend cho RTSP (stimeout tính theo microseconds)
+        try:
+            stimeout_us = max(int(RTSP_OPEN_TIMEOUT_MS), int(RTSP_READ_TIMEOUT_MS)) * 1000
         except Exception:
             stimeout_us = 5_000_000
-        ffmpeg_opts = [
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "|".join([
             f"rtsp_transport;{RTSP_TRANSPORT}",
             f"stimeout;{stimeout_us}",
             f"max_delay;{int(RTSP_MAX_DELAY_MS) * 1000}",
-        ]
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "|".join(ffmpeg_opts)
+        ])
 
-        while self.running:
-            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+        max_attempts = max(1, int(CAMERA_CONNECT_ATTEMPTS))
+        attempts = 0
+        lost_before = False
 
-            # Giảm buffer để hạn chế trễ (không phải backend nào cũng hỗ trợ)
+        while self.running and not stop.is_set():
+            if restart.is_set():
+                restart.clear()
+                attempts = 0
+                lost_before = False
+            cfg = worker["cfg"]  # có thể đã đổi URL trên web
+            rtsp_url = str(cfg["rtsp_url"]).strip()
+            source = int(rtsp_url) if rtsp_url.isdigit() else rtsp_url
+
+            attempts += 1
+            prefix = "Mất kết nối, đang thử lại" if lost_before else "Đang kết nối"
+            self._set_cam_status(code, "connecting", f"{prefix} (lần {attempts}/{max_attempts})")
+            logger.info("[camera %s] %s: %s (lần %d/%d)", code, prefix, cfg.get("name"), attempts, max_attempts)
+
+            if isinstance(source, str):
+                # Timeout qua tham số OpenCV (FFmpeg mới bỏ "stimeout" → nếu không sẽ treo ~30s khi sai IP)
+                cap = cv2.VideoCapture(source, cv2.CAP_FFMPEG, [
+                    cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, int(RTSP_OPEN_TIMEOUT_MS),
+                    cv2.CAP_PROP_READ_TIMEOUT_MSEC, int(RTSP_READ_TIMEOUT_MS),
+                ])
+            else:
+                cap = cv2.VideoCapture(source)
             try:
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, RTSP_BUFFER_SIZE)
             except Exception:
                 pass
 
             if not cap.isOpened():
-                logger.error("Không thể kết nối camera %s, thử lại sau 5s...", camera_id)
-                time.sleep(5)
+                cap.release()
+                if attempts >= max_attempts:
+                    reason = "Mất kết nối camera" if lost_before else "Không kết nối được camera"
+                    self._set_cam_status(
+                        code, "error",
+                        f"{reason} sau {max_attempts} lần thử (sai IP/mật khẩu, camera tắt hoặc mất mạng)",
+                    )
+                    # Dừng hẳn: chờ admin bấm "Khởi động lại" (hoặc camera bị xóa / dịch vụ dừng)
+                    while self.running and not stop.is_set() and not restart.wait(1.0):
+                        pass
+                    continue
+                restart.wait(float(CAMERA_RETRY_DELAY_SEC))
                 continue
 
-            logger.info("Đã kết nối camera: %s", camera_name)
+            attempts = 0
+            lost_before = False
+            self._set_cam_status(code, "online", "")
+            logger.info("[camera %s] Đã kết nối: %s", code, cfg.get("name"))
 
+            lost = False
             next_process_time = time.monotonic()
-            while self.running:
-                # Grab liên tục để luôn lấy frame mới nhất, tránh dồn buffer khi chỉ xử lý theo interval
-                ok = cap.grab()
-                if not ok:
-                    logger.warning("Mất kết nối camera %s, reconnect...", camera_id)
+            while self.running and not stop.is_set() and not restart.is_set():
+                # Grab liên tục để luôn lấy frame mới nhất, tránh dồn buffer
+                if not cap.grab():
+                    lost = True
                     break
-
                 now = time.monotonic()
                 if now < next_process_time:
                     time.sleep(0.01)
                     continue
-
                 ret, frame = cap.retrieve()
                 if not ret or frame is None:
-                    logger.warning("Không lấy được frame camera %s, reconnect...", camera_id)
+                    lost = True
                     break
-
                 try:
-                    self.process_frame(frame, camera_id)
+                    self.process_frame(frame, code)
                 except Exception as e:
-                    logger.error("Lỗi xử lý frame camera %s: %s", camera_id, e)
-
+                    logger.error("Lỗi xử lý frame camera %s: %s", code, e)
                 next_process_time = now + float(FRAME_INTERVAL)
 
             cap.release()
-            time.sleep(2)  # Đợi trước khi reconnect
+            if lost:
+                logger.warning("[camera %s] Mất kết nối", code)
+                lost_before = True
+                restart.wait(float(CAMERA_RETRY_DELAY_SEC))
+
+        with self._cam_lock:
+            if self.camera_workers.get(code) is worker and stop.is_set():
+                self.camera_status.pop(code, None)
 
     def stream_video(self, video_path: str, camera_id: str = "video"):
         """Đọc và xử lý một file video đã lưu.
@@ -846,12 +982,20 @@ class AIService:
         reload_thread = threading.Thread(target=reload_loop, daemon=True)
         reload_thread.start()
 
-        # 4. Mở stream cho từng camera (mỗi camera 1 thread)
-        threads = []
-        for cam in CAMERAS:
-            t = threading.Thread(target=self.stream_camera, args=(cam,), daemon=True)
-            t.start()
-            threads.append(t)
+        # 4. Lấy danh sách camera do admin cấu hình trên web; Flask chưa chạy → dùng mặc định trong config
+        if not self._sync_with_server():
+            logger.warning("Dùng danh sách camera mặc định trong config.py (chờ Flask để nhận cấu hình từ web)")
+            self._apply_camera_list([
+                {"code": str(c["id"]), "name": c.get("name"), "rtsp_url": c["rtsp_url"]} for c in CAMERAS
+            ])
+
+        # 5. Đồng bộ trạng thái / cấu hình / lệnh khởi động lại với Flask mỗi 2 giây
+        def sync_loop():
+            while self.running:
+                time.sleep(2)
+                self._sync_with_server()
+
+        threading.Thread(target=sync_loop, daemon=True, name="camera-sync").start()
 
         # Giữ main thread chạy
         try:
@@ -860,8 +1004,12 @@ class AIService:
         except KeyboardInterrupt:
             logger.info("Đang dừng AI Service...")
             self.running = False
-            for t in threads:
-                t.join(timeout=5)
+            with self._cam_lock:
+                workers = list(self.camera_workers.values())
+            for w in workers:
+                w["stop"].set()
+            for w in workers:
+                w["thread"].join(timeout=5)
             logger.info("AI Service đã dừng.")
 
 

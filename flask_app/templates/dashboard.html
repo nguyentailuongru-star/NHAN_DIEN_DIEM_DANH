@@ -54,13 +54,16 @@
         <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span class="panel-title"><i class="bi bi-camera-video"></i> Camera trực tiếp</span>
-                <span class="count-pill" id="cam-online-count">0/{{ cameras|length }} trực tuyến</span>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="count-pill" id="cam-online-count">0/{{ cameras|length }} trực tuyến</span>
+                    <a href="/cameras" class="btn btn-sm btn-light border" title="Cấu hình camera"><i class="bi bi-gear"></i></a>
+                </div>
             </div>
             <div class="cam-grid">
                 {% for cam in cameras %}
-                <div class="cam-tile" data-cam="{{ cam.index }}">
+                <div class="cam-tile" data-cam="{{ cam.id }}">
                     <div class="cam-frame">
-                        <img alt="{{ cam.name }}" data-src="{{ url_for('dashboard.camera_stream') }}?cam={{ cam.index }}">
+                        <img alt="{{ cam.name }}" data-src="{{ url_for('dashboard.camera_stream') }}?cam={{ cam.id }}">
                         <span class="cam-live-tag">LIVE</span>
                         <div class="cam-overlay" data-overlay>
                             <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
@@ -68,12 +71,26 @@
                         </div>
                     </div>
                     <div class="cam-meta">
-                        <div>
-                            <div class="cam-name">{{ cam.name }}</div>
+                        <div class="min-w-0">
+                            <div class="cam-name">{{ cam.name }} <span class="cam-code">#{{ cam.code }}</span></div>
                             <div class="cam-host"><i class="bi bi-hdd-network"></i> {{ cam.host }}</div>
                         </div>
                         <span class="cam-status" data-status>Đang kết nối</span>
                     </div>
+                    <div class="cam-lines">
+                        <div><span class="dot" data-dot-preview></span>Hình ảnh: <span data-line-preview>Đang kết nối...</span></div>
+                        <div><span class="dot" data-dot-ai></span>AI nhận diện: <span data-line-ai>Đang kiểm tra...</span></div>
+                    </div>
+                    <div class="cam-actions">
+                        <button class="btn btn-sm btn-outline-secondary" data-restart>
+                            <i class="bi bi-arrow-clockwise"></i> Khởi động lại camera
+                        </button>
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state" style="grid-column:1/-1">
+                    <i class="bi bi-camera-video-off"></i>
+                    Chưa có camera nào đang bật. <a href="/cameras">Cấu hình camera</a>
                 </div>
                 {% endfor %}
             </div>
@@ -109,51 +126,152 @@ document.addEventListener('DOMContentLoaded', function() {
     loadStats();
     loadTodayLogs();
     initCameras();
+    pollCameraStatus();
+    setInterval(pollCameraStatus, 3000);
     setInterval(loadStats, 30000);
     setInterval(loadTodayLogs, 60000);  // cập nhật "x phút trước"
 });
 
-/* ---------- Camera ---------- */
+/* ---------- Camera ----------
+   Không tự kết nối lại: lỗi → báo đỏ, admin bấm "Khởi động lại camera".
+   Trạng thái lấy từ máy chủ mỗi 3 giây (hình ảnh + AI nhận diện). */
+const camState = {};   // {id: {preview: 'connecting'|'online'|'error', ai: {...}}}
+
 function initCameras() {
     document.querySelectorAll('.cam-tile').forEach(function(tile) {
+        const id = tile.dataset.cam;
         const img = tile.querySelector('img');
-        const overlay = tile.querySelector('[data-overlay]');
-        const status = tile.querySelector('[data-status]');
-        let retryTimer = null;
+        camState[id] = { preview: 'connecting', ai: null, restarting: false };
 
-        function setState(state) {
-            tile.classList.toggle('online', state === 'online');
-            tile.classList.toggle('offline', state === 'offline');
-            if (state === 'online') {
-                overlay.classList.add('hidden');
-                status.textContent = 'Trực tuyến';
-            } else if (state === 'offline') {
-                overlay.classList.remove('hidden');
-                overlay.innerHTML = '<i class="bi bi-camera-video-off"></i><span>Mất kết nối camera</span>'
-                    + '<span style="font-size:.74rem;color:#64748b">Tự động thử lại sau 5 giây</span>';
-                status.textContent = 'Mất kết nối';
-            }
-            updateOnlineCount();
-        }
-
-        function connect() {
-            img.src = img.dataset.src + '&t=' + Date.now();
-        }
-
-        img.addEventListener('load', function() { setState('online'); });
-        img.addEventListener('error', function() {
-            setState('offline');
-            clearTimeout(retryTimer);
-            retryTimer = setTimeout(connect, 5000);
+        img.addEventListener('load', function() {
+            camState[id].preview = 'online';
+            camState[id].previewMsg = '';
+            renderCamTile(tile);
         });
-        connect();
+        img.addEventListener('error', function() {
+            camState[id].preview = 'error';
+            camState[id].previewMsg = 'Không mở được camera (sai IP, camera tắt hoặc mất mạng)';
+            img.removeAttribute('src');   // dừng hẳn, không thử lại
+            renderCamTile(tile);
+        });
+        tile.querySelector('[data-restart]').addEventListener('click', function() { restartCamera(tile); });
+        connectPreview(tile);
     });
+}
+
+function connectPreview(tile) {
+    const id = tile.dataset.cam;
+    const img = tile.querySelector('img');
+    camState[id].preview = 'connecting';
+    camState[id].previewMsg = '';
+    renderCamTile(tile);
+    img.src = img.dataset.src + '&t=' + Date.now();
+}
+
+function restartCamera(tile) {
+    const id = tile.dataset.cam;
+    const btn = tile.querySelector('[data-restart]');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang khởi động lại...';
+    camState[id].restarting = true;
+    fetch('/api/cameras/' + id + '/restart', { method: 'POST' })
+        .then(r => r.json())
+        .catch(() => ({}))
+        .finally(() => {
+            connectPreview(tile);
+            setTimeout(function() {
+                camState[id].restarting = false;
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Khởi động lại camera';
+                pollCameraStatus();
+            }, 3000);
+        });
+}
+
+function pollCameraStatus() {
+    fetch('/api/cameras/status')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (!data) return;
+            (data.cameras || []).forEach(function(c) {
+                const tile = document.querySelector('.cam-tile[data-cam="' + c.id + '"]');
+                if (!tile) return;
+                const st = camState[c.id];
+                st.ai = c.ai;
+                // Máy chủ phát hiện luồng xem bị đứng (không còn hình) → báo lỗi, ngắt luồng
+                if (st.preview === 'online' && c.preview && c.preview.state === 'error' && !st.restarting) {
+                    st.preview = 'error';
+                    st.previewMsg = c.preview.message;
+                    tile.querySelector('img').removeAttribute('src');
+                }
+                renderCamTile(tile);
+            });
+        })
+        .catch(() => {});
+}
+
+const AI_TEXT = {
+    online: ['ok', 'Đang nhận diện'],
+    connecting: ['warn', null],
+    error: ['err', null],
+    offline: ['muted', 'AI service chưa chạy'],
+    disabled: ['muted', 'Camera đang tắt'],
+};
+
+function renderCamTile(tile) {
+    const id = tile.dataset.cam;
+    const st = camState[id];
+    const overlay = tile.querySelector('[data-overlay]');
+    const status = tile.querySelector('[data-status]');
+
+    // Dòng "Hình ảnh"
+    const pv = { online: ['ok', 'Trực tuyến'], connecting: ['warn', 'Đang kết nối...'], error: ['err', st.previewMsg || 'Mất kết nối'] }[st.preview];
+    setLine(tile, 'preview', pv[0], pv[1]);
+
+    // Dòng "AI nhận diện"
+    let aiErr = false;
+    if (st.ai) {
+        const conf = AI_TEXT[st.ai.state] || ['muted', st.ai.message || '—'];
+        const text = conf[1] || st.ai.message || '';
+        setLine(tile, 'ai', conf[0], text + (st.ai.state === 'error' && st.ai.since ? ' (từ ' + st.ai.since.split(' ')[0] + ')' : ''));
+        aiErr = st.ai.state === 'error';
+    }
+
+    const isErr = st.preview === 'error' || aiErr;
+    tile.classList.toggle('online', st.preview === 'online' && !aiErr);
+    tile.classList.toggle('offline', isErr);
+    tile.classList.toggle('connecting', !isErr && st.preview === 'connecting');
+
+    if (st.preview === 'online') {
+        overlay.classList.add('hidden');
+    } else if (st.preview === 'error') {
+        overlay.classList.remove('hidden');
+        overlay.innerHTML = '<i class="bi bi-exclamation-octagon-fill"></i><strong>Camera không hoạt động</strong>'
+            + '<span>' + escapeHtml(st.previewMsg || '') + '</span>'
+            + '<span class="hint">Đã dừng kết nối. Kiểm tra camera rồi bấm "Khởi động lại camera".</span>';
+    } else {
+        overlay.classList.remove('hidden');
+        overlay.innerHTML = '<div class="spinner-border spinner-border-sm text-secondary" role="status"></div><span>Đang kết nối camera...</span>';
+    }
+
+    status.textContent = isErr ? 'Lỗi camera' : (st.preview === 'online' ? 'Trực tuyến' : 'Đang kết nối');
+    const btn = tile.querySelector('[data-restart]');
+    if (!btn.disabled) btn.className = 'btn btn-sm ' + (isErr ? 'btn-danger' : 'btn-outline-secondary');
+    updateOnlineCount();
+}
+
+function setLine(tile, which, tone, text) {
+    tile.querySelector('[data-dot-' + which + ']').className = 'dot ' + tone;
+    tile.querySelector('[data-line-' + which + ']').textContent = text;
 }
 
 function updateOnlineCount() {
     const all = document.querySelectorAll('.cam-tile').length;
     const on = document.querySelectorAll('.cam-tile.online').length;
-    document.getElementById('cam-online-count').textContent = on + '/' + all + ' trực tuyến';
+    const err = document.querySelectorAll('.cam-tile.offline').length;
+    const el = document.getElementById('cam-online-count');
+    el.textContent = on + '/' + all + ' trực tuyến' + (err ? ' · ' + err + ' lỗi' : '');
+    el.classList.toggle('pill-danger', err > 0);
 }
 
 /* ---------- Thống kê ---------- */

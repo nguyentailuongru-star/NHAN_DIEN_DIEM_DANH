@@ -287,12 +287,10 @@ def _get_face_app():
                 f"Chi tiết: {str(e).strip()}"
             )
 
-        model_dir = os.path.join(AI_SERVICE_DIR, "models", "buffalo_l")
-        if not os.path.exists(model_dir):
-            raise RuntimeError(
-                f"Chưa có model buffalo_l tại: {model_dir}. "
-                "Hãy chạy setup.bat hoặc ai_service/download_model.py"
-            )
+        from model_store import ensure_face_model
+
+        # Model cài trên máy (%LOCALAPPDATA%\NhanDienDiemDanh\models), tự tải nếu chưa có
+        model_dir = ensure_face_model()
         # ctx_id=0: cố gắng dùng GPU nếu cấu hình CUDA OK; nếu không sẽ fallback CPU (đã patch trong face_analysis_local)
         _FACE_APP = FaceAnalysisLocal(model_dir=model_dir, ctx_id=0)
         # Upload ảnh đăng ký: hạ ngưỡng detect một chút để dễ bắt khuôn mặt hơn

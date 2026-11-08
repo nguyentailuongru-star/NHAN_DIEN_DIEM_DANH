@@ -19,13 +19,20 @@ API_BASE_URL = "http://localhost:5000"
 API_RECOGNITION_URL = f"{API_BASE_URL}/api/recognition"
 API_GET_USERS_URL = f"{API_BASE_URL}/api/users/embeddings"
 API_ATTENTION_URL = f"{API_BASE_URL}/api/attention"
+API_CAMERA_SYNC_URL = f"{API_BASE_URL}/api/cameras/ai-sync"
+
+# Kết nối camera: thử tối đa N lần (cách nhau vài giây) rồi DỪNG HẲN và báo đỏ trên dashboard.
+# Admin bấm "Khởi động lại camera" trên dashboard để kết nối lại. Đặt 1 = không thử lại.
+CAMERA_CONNECT_ATTEMPTS = 3
+CAMERA_RETRY_DELAY_SEC = 3
 
 # InsightFace config
 FACE_MODEL_NAME = "buffalo_l"
 GPU_ID = 0  # -1 cho CPU
 
-# Đường dẫn model trong dự án (thay vì ~/.insightface/models)
-# FaceAnalysis tìm onnx tại: {root}/{name}/*.onnx → models/buffalo_l/*.onnx
+# Model buffalo_l + yolov8n.pt được cài trên máy, không nằm trong dự án (xem model_store.py):
+#   %LOCALAPPDATA%\NhanDienDiemDanh\models   (đổi bằng biến môi trường AI_MODEL_HOME)
+# MODEL_ROOT bên dưới chỉ còn chứa model tự train student_behavior_best.pt.
 import os
 
 # Workspace root (chứa ai_service/, flask_app/, video/, captures/ ...)
@@ -75,6 +82,15 @@ RECOGNITION_COOLDOWN = 300
 # Student behavior model config
 BEHAVIOR_MODEL_FILENAME = "student_behavior_best.pt"
 BEHAVIOR_POST_INTERVAL = 5.0  # giây, gửi đánh giá hành vi định kỳ theo user+camera
+
+# Ảnh minh họa hành vi lưu vào captures/: mỗi người trên mỗi camera tối đa 1 ảnh / khoảng này.
+# (Trước đây lưu mỗi frame ~2 ảnh/giây → đầy ổ đĩa.) Đặt BEHAVIOR_SAVE_IMAGES = False để tắt hẳn.
+BEHAVIOR_SAVE_IMAGES = True
+BEHAVIOR_CAPTURE_INTERVAL = 300  # giây (5 phút)
+
+# Kích thước/chất lượng ảnh lưu vào captures/ (cạnh dài tối đa, chất lượng JPEG 0-100)
+CAPTURE_MAX_SIDE = 640
+CAPTURE_JPEG_QUALITY = 80
 BEHAVIOR_CLASS_NAMES = [
     "distracted",
     "focused",

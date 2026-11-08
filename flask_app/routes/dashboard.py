@@ -25,8 +25,11 @@ def _open_camera_capture(camera_source):
 
     source_value = _camera_source_value(camera_source)
     if isinstance(source_value, str) and source_value.lower().startswith("rtsp://"):
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000|max_delay;500000"
-        cap = cv2.VideoCapture(source_value, cv2.CAP_FFMPEG)
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|max_delay;500000"
+        # Timeout 5s (FFmpeg mới bỏ "stimeout" → nếu không đặt ở đây sẽ treo ~30s khi sai IP)
+        cap = cv2.VideoCapture(source_value, cv2.CAP_FFMPEG, [
+            cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000, cv2.CAP_PROP_READ_TIMEOUT_MSEC, 5000,
+        ])
     else:
         cap = cv2.VideoCapture(source_value)
 
@@ -42,7 +45,9 @@ def _open_camera_capture(camera_source):
     return cap, cv2
 
 
-def _camera_stream_generator(cap, cv2):
+def _camera_stream_generator(cap, cv2, cam_idx=None):
+    from routes.cameras import preview_update
+
     try:
         last_ok_at = time.monotonic()
         encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), 80]
@@ -51,11 +56,15 @@ def _camera_stream_generator(cap, cv2):
             ok, frame = cap.read()
             if not ok or frame is None:
                 if (time.monotonic() - last_ok_at) > 10.0:
+                    if cam_idx is not None:
+                        preview_update(cam_idx, "error", "Mất kết nối camera (không nhận được hình)")
                     break
                 time.sleep(0.15)
                 continue
 
             last_ok_at = time.monotonic()
+            if cam_idx is not None:
+                preview_update(cam_idx, "online")
             encoded_ok, jpg = cv2.imencode(".jpg", frame, encode_params)
             if not encoded_ok:
                 continue
@@ -65,6 +74,11 @@ def _camera_stream_generator(cap, cv2):
                 b"Content-Type: image/jpeg\r\n\r\n" + jpg.tobytes() + b"\r\n"
             )
             time.sleep(0.03)
+    except GeneratorExit:
+        # Người xem đóng trang → không phải lỗi camera
+        if cam_idx is not None:
+            preview_update(cam_idx, "idle")
+        raise
     finally:
         try:
             cap.release()
@@ -80,42 +94,50 @@ def index():
 
 
 def _camera_list():
-    """Danh sách camera để hiển thị: chỉ tên + IP, KHÔNG đưa user/mật khẩu RTSP ra trang web."""
-    from urllib.parse import urlparse
+    """Camera đang bật (cấu hình trên trang Cấu hình camera). KHÔNG đưa user/mật khẩu RTSP ra trang web."""
+    from routes.cameras import list_cameras
 
-    cams = []
-    for idx, src in enumerate(Config.CAMERA_SOURCES or [Config.DEFAULT_CAMERA_SOURCE]):
-        txt = str(src).strip()
-        if txt.isdigit():
-            host = f"Webcam {txt}"
-        else:
-            try:
-                u = urlparse(txt)
-                host = u.hostname or txt
-            except ValueError:
-                host = "Camera"
-        cams.append({"index": idx, "name": f"Camera {idx + 1}", "host": host})
-    return cams
+    return [
+        {"id": c.id, "code": c.code, "name": c.name, "host": c.to_dict()["host"]}
+        for c in list_cameras(enabled_only=True)
+    ]
+
+
+@dashboard_bp.route("/cameras")
+@page_admin_required
+def cameras_page():
+    """Trang cấu hình camera (thêm/sửa/xóa luồng RTSP)."""
+    return render_template("cameras.html")
 
 
 @dashboard_bp.route("/camera-stream")
 @page_admin_required
 def camera_stream():
-    """Phát MJPEG trực tiếp từ camera/source cho dashboard."""
-    cam_idx = request.args.get("cam", type=int)
-    sources = Config.CAMERA_SOURCES or [Config.DEFAULT_CAMERA_SOURCE]
-    if cam_idx is not None and 0 <= cam_idx < len(sources):
-        camera_source = str(sources[cam_idx]).strip()
+    """Phát MJPEG trực tiếp từ camera đã cấu hình (?cam=<id>) cho dashboard."""
+    from models import Camera
+    from routes.cameras import preview_update
+
+    cam_id = request.args.get("cam", type=int)
+    cam = Camera.query.get(cam_id) if cam_id is not None else None
+    if cam is not None:
+        camera_source = cam.rtsp_url.strip()
     else:
         camera_source = (request.args.get("source") or Config.DEFAULT_CAMERA_SOURCE).strip() or Config.DEFAULT_CAMERA_SOURCE
+
+    preview_idx = cam.id if cam is not None else None
+    if preview_idx is not None:
+        preview_update(preview_idx, "connecting", "Đang kết nối...")
     try:
         cap, cv2 = _open_camera_capture(camera_source)
     except Exception as e:
-        current_app.logger.error("Camera stream open failed: %s", e)
-        return Response(str(e).strip(), status=503, mimetype="text/plain")
+        current_app.logger.error("Camera stream open failed (cam=%s): %s", preview_idx, e)
+        if preview_idx is not None:
+            preview_update(preview_idx, "error", "Không mở được camera (sai IP, camera tắt hoặc mất mạng)")
+        # Không trả URL/mật khẩu RTSP về trình duyệt
+        return Response("Không mở được camera", status=503, mimetype="text/plain")
 
     return Response(
-        stream_with_context(_camera_stream_generator(cap, cv2)),
+        stream_with_context(_camera_stream_generator(cap, cv2, preview_idx)),
         mimetype="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
@@ -142,10 +164,14 @@ def behavior_video_page():
 @page_admin_required
 def group_camera_page():
     """Trang gom khuôn mặt từ camera."""
+    from routes.cameras import list_cameras
+
+    cams = list_cameras(enabled_only=True)
+    sources = [c.rtsp_url for c in cams] or list(Config.CAMERA_SOURCES or [])
     return render_template(
         "group_camera.html",
-        default_camera_source=Config.DEFAULT_CAMERA_SOURCE,
-        camera_sources=Config.CAMERA_SOURCES,
+        default_camera_source=sources[0] if sources else Config.DEFAULT_CAMERA_SOURCE,
+        camera_sources=sources,
     )
 
 

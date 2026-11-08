@@ -518,6 +518,36 @@ body.auth-page {
 .cam-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .cam-tile.online .cam-status { background: var(--success-soft); color: var(--success); }
 .cam-tile.offline .cam-status { background: var(--danger-soft); color: var(--danger); }
+.cam-tile.connecting .cam-status { background: var(--warning-soft); color: var(--warning); }
+
+/* Camera lỗi → viền đỏ + màn hình đỏ */
+.cam-tile.offline { border-color: #fca5a5; box-shadow: 0 0 0 3px rgba(220, 38, 38, .12); }
+.cam-tile.offline .cam-overlay { background: #2a0d12; color: #fecaca; }
+.cam-tile.offline .cam-overlay .bi { color: #f87171; font-size: 2rem; }
+.cam-tile.offline .cam-overlay strong { color: #fff; font-size: .9rem; }
+.cam-overlay .hint { font-size: .72rem; color: #fca5a5; opacity: .85; }
+
+.cam-code { color: var(--muted); font-weight: 500; font-size: .74rem; }
+.min-w-0 { min-width: 0; }
+.cam-lines {
+    padding: 0 14px 10px;
+    font-size: .76rem;
+    color: var(--muted);
+    display: grid;
+    gap: 3px;
+}
+.cam-lines > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cam-lines span[data-line-preview],
+.cam-lines span[data-line-ai] { color: var(--text); }
+.dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; background: #cbd5e1; vertical-align: middle; }
+.dot.ok { background: var(--success); }
+.dot.warn { background: var(--warning); }
+.dot.err { background: var(--danger); box-shadow: 0 0 0 3px rgba(220, 38, 38, .18); }
+.dot.muted { background: #cbd5e1; }
+.cam-tile.offline .cam-lines span.err-text { color: var(--danger); }
+.cam-actions { padding: 0 14px 12px; }
+.cam-actions .btn { width: 100%; }
+.count-pill.pill-danger { background: var(--danger-soft); border-color: #fecaca; color: var(--danger); }
 
 /* Danh sách điểm danh hôm nay */
 .att-list { max-height: 560px; overflow-y: auto; }

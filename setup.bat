@@ -42,7 +42,7 @@ cd /d "%~dp0flask_app"
 "%PY_EXE%" -m pip install -r requirements.txt
 
 echo.
-echo [3/4] Tai model InsightFace buffalo_l...
+echo [3/4] Cai model AI vao may (%%LOCALAPPDATA%%\NhanDienDiemDanh\models)...
 echo -----------------------------------------------------------
 cd /d "%~dp0ai_service"
 "%PY_EXE%" download_model.py

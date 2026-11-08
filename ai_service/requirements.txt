@@ -9,3 +9,11 @@ requests>=2.31.0
 onnxruntime>=1.17.0
 ultralytics>=8.2.0
 lap>=0.5.12   # ByteTrack (person tracking) của ultralytics
+
+# ---------------------------------------------------------------------------
+# MODEL AI không cài qua pip được (pip chỉ cài thư viện). Hệ thống tự tải model còn thiếu
+# ở lần chạy đầu vào %LOCALAPPDATA%\NhanDienDiemDanh\models (xem model_store.py):
+#   - buffalo_l: det_10g.onnx + w600k_r50.onnx (GitHub InsightFace)
+#   - yolov8n.pt (Ultralytics)
+# Tải trước: python ai_service/download_model.py
+# ---------------------------------------------------------------------------

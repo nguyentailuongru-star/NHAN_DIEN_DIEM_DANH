@@ -44,6 +44,8 @@ def create_app():
     from routes.api import api_bp
     from routes.dashboard import dashboard_bp
     from routes.auth import auth_bp
+    from routes.cameras import cameras_bp
+    app.register_blueprint(cameras_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(auth_bp)
@@ -96,6 +98,8 @@ def create_app():
     with app.app_context():
         _ensure_schema_compat()
         db.create_all()
+        from routes.cameras import ensure_default_cameras
+        ensure_default_cameras()
 
     return app
 
